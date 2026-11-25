@@ -84,6 +84,7 @@ DASHBOARD_HTML = r"""<!doctype html>
   </div>
 </header>
 <main>
+  <div class="muted" id="hint" style="margin:-4px 0 12px"></div>
   <section class="cards">
     <div class="card"><div class="label">Connection</div><div class="value"><span class="pill" id="conn">unknown</span></div><div class="sub" id="adapter">adapter —</div></div>
     <div class="card"><div class="label">Current HR</div><div class="value" id="hr">—</div><div class="sub" id="hr-at">no data</div></div>
@@ -200,6 +201,20 @@ async function refreshStatus() {
     $('spool').textContent = `spool ${s.spool_pending || 0}`;
     $('adapter').textContent = state.adapter_available === false ? 'adapter unavailable' : 'adapter ' + (state.adapter_available === true ? 'ok' : '—');
     $('service-line').textContent = `service ${state.service_status || 'unknown'} · ${state.paused ? 'paused' : 'active'}${state.last_error ? ' · ' + state.last_error : ''}`;
+    let hint = '';
+    if (state.connection_status === 'connected') {
+      hint = '';
+    } else if (state.paused) {
+      hint = 'Acquisition is paused. Use Start/Connect to resume.';
+    } else if (state.last_error) {
+      hint = `Not connected: ${state.last_error} — start HR Data Broadcast on the band; retrying automatically.`;
+      if (state.next_retry_at && state.next_retry_at * 1000 > Date.now()) {
+        hint += ` Next retry in ${Math.ceil((state.next_retry_at * 1000 - Date.now()) / 1000)} s.`;
+      }
+    } else {
+      hint = 'Waiting for the band HR broadcast endpoint…';
+    }
+    $('hint').textContent = hint;
     const servicePill = state.service_status || 'unknown';
     document.querySelectorAll('[data-action]').forEach(b => { b.disabled = false; });
     if (servicePill === 'stopped') $('service-line').textContent += ' · starts on next boot';

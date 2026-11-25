@@ -154,9 +154,38 @@ Definitions and guardrails:
 | Web independence | web unit stayed up while acquisition restarted |
 | Boot persistence | user units enabled and lingering enabled (`Linger=yes`) |
 | Real reboot | **not performed** (would disrupt the host); verify once at a convenient time with `last reboot` + dashboard continuity |
-| Real BLE acquisition | band was charging / HR broadcast off during deployment; daemon is retrying with backoff and will connect when the broadcast starts |
+| Real BLE acquisition | **partial**: 17 HRS samples at ~0.99 s captured on 2026-11-25 23:14–23:15; a manual reconnect request then coincided with the band stopping HR advertising. The service correctly kept retrying; no endpoint was visible to a fresh scan. |
 
-## 9. HR broadcast vs background metrics experiment
+## 9. Troubleshooting
+
+### Dashboard stuck at “connecting” / “disconnected”
+
+The dashboard hint prints the last error and the next retry. If it says
+`BleakDeviceNotFoundError` or BlueZ cannot find the device:
+
+1. Wake the band and check the battery (the sample unit was at 16% during the
+   first run).
+2. On the band, open **Settings → HR Data Broadcasts** and start it again.
+3. Confirm the band is not connected to the phone on the normal endpoint.
+4. Click **Reconnect now**, or wait for the backoff (max 60 s).
+
+The daemon removes a stale BlueZ cache entry after `Device not found` /
+`br-connection-canceled` and rescans, so a rotated HR-broadcast address is
+picked up on the next attempt.
+
+### Dashboard “Disconnect” versus “Stop acquisition”
+
+Both write `paused=true`; the daemon releases the BLE link and stops retrying.
+Use **Start acquisition** or **Connect** to resume. A normal BLE drop does not
+pause the daemon; it reconnects automatically.
+
+### Manual reconnect loop
+
+Each Connect/Reconnect click increments the request counter. The daemon
+consumes the request once, disconnects and reconnects; repeated clicks can
+cause several cycles. Click once and wait for the status to change.
+
+## 10. HR broadcast vs background metrics experiment
 
 This is a separate controlled experiment; do not assume interference.
 
@@ -183,7 +212,7 @@ If broadcasting stops internal storage, the PC database is the authoritative
 HR record for phases B/C. If internal storage continues, the two records can be
 cross-checked. Do not infer an effect from a single short session.
 
-## 10. First-run checklist (after charging)
+## 11. First-run checklist (after charging)
 
 1. On the band: **Settings → HR Data Broadcasts → start**.
 2. Ensure the band is not connected to the phone for the normal endpoint; the

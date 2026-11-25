@@ -5,13 +5,15 @@ from __future__ import annotations
 import asyncio
 import logging
 import random
+import shutil
 import statistics
+import subprocess
 import time
 from dataclasses import dataclass
 from pathlib import Path
 
 from bleak import BleakClient
-from bleak.exc import BleakError
+from bleak.exc import BleakDBusError, BleakDeviceNotFoundError, BleakError
 
 from ..ble_scanner import find_endpoint
 from ..database import AcquisitionDB
@@ -206,7 +208,22 @@ class BandHRCollector:
             disconnected_callback=on_disconnect,
         )
         try:
-            await client.connect()
+            try:
+                await client.connect()
+            except (BleakDeviceNotFoundError, BleakDBusError) as exc:
+                self.db.add_event(
+                    "connect_failed",
+                    session_id=self._session_id,
+                    details={"address": endpoint.address, "error": str(exc)},
+                )
+                if isinstance(exc, BleakDeviceNotFoundError) or "br-connection-canceled" in str(exc):
+                    await asyncio.to_thread(_remove_bluez_cache, endpoint.address)
+                    self.db.add_event(
+                        "bluez_cache_removed",
+                        session_id=self._session_id,
+                        details={"address": endpoint.address},
+                    )
+                raise
             self.db.add_event(
                 "connected",
                 session_id=self._session_id,
@@ -369,6 +386,8 @@ class BandHRCollector:
                 self.state.update(
                     last_disconnection_at=now,
                     connection_status="disconnected",
+                    current_hr=None,
+                    current_hr_at=None,
                     force=True,
                 )
                 if result is not None:
@@ -439,6 +458,23 @@ class BandHRCollector:
             return False
         except TimeoutError:
             return True
+
+
+def _remove_bluez_cache(address: str) -> None:
+    """Remove a stale BlueZ device record so the next scan is authoritative."""
+
+    executable = shutil.which("bluetoothctl") or "/usr/bin/bluetoothctl"
+    try:
+        subprocess.run(
+            [executable, "remove", address],
+            capture_output=True,
+            text=True,
+            timeout=8,
+            check=False,
+        )
+        LOG.info("removed stale BlueZ device %s", address)
+    except (OSError, subprocess.TimeoutExpired):
+        LOG.warning("could not remove stale BlueZ device %s", address, exc_info=True)
 
 
 __all__ = ["HRS_CHAR", "HRS_SERVICE", "BandHRCollector", "CollectorConfig", "ConnectionResult"]

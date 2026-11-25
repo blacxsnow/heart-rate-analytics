@@ -3,9 +3,10 @@
 **Date:** 2026-11-25
 **Scope:** first deployment of the 24×7 acquisition service, while the Band 9
 was charging and HR broadcasting was not active.
-**Real-device status:** no real HR samples yet; the daemon is running and
-retrying with exponential backoff until **Settings → HR Data Broadcasts** is
-started on the band.
+**Real-device status:** 17 real HRS samples were captured on 2026-11-25
+23:14–23:15 at ~0.99 s; the band then stopped advertising the HR-broadcast
+endpoint after a manual reconnect request. The daemon remains healthy and is
+retrying with exponential backoff.
 
 ---
 
@@ -38,7 +39,7 @@ unit was killed and restarted.
 | Web independence | dashboard stayed active across the acquisition restart |
 | Empty real DB analysis | `band9-analyze` completed and produced a “no data” report |
 | Real reboot | **not performed** — requires a host reboot at a convenient time |
-| Real BLE acquisition | pending HR-broadcast activation after charging |
+| Real BLE acquisition | **17 samples at ~0.99 s**, then the band stopped advertising; service retry path verified |
 
 ## 3. Simulation quality report
 
@@ -71,9 +72,26 @@ sleep intervals” rather than inventing a value.
 
 ## 4. Real database report
 
-`band9-analyze --db ~/.local/share/band9/acquisition.sqlite3` completed with
-`measurements: 0`. The markdown report says “No data”; no figures were produced.
-This is the expected state while the band charges and HR broadcasting is off.
+The first real run produced 17 measurements in session 6:
+
+```
+total measurements          17
+observed interval (p50)     0.99 s
+interval p05 / p95          0.83 / 3.90 s
+completeness                0.607
+longest gap                 11.7 s
+duplicate candidates        0
+```
+
+`band9-analyze --db ~/.local/share/band9/acquisition.sqlite3 --out reports/real`
+produced `quality.json`, `baseline.json`, `dynamics.json`,
+`longitudinal.json`, `daily.csv` and `summary.md`; no plots were requested.
+The 11.7 s gap is reported explicitly, not filled.
+
+After the manual reconnect request, a fresh scan found no `HUAWEI Band HR-*`
+endpoint and BlueZ could not find the cached address. The band was not
+advertising; the service kept retrying. The current blocked condition is
+therefore band-side (broadcast off / power), not a web or database failure.
 
 ## 5. Reproduce
 
@@ -91,9 +109,9 @@ BAND9_DATA_DIR="$PWD/data/demo" \
 
 ## 6. What remains
 
-1. Start HR Data Broadcast on the band after charging.
+1. Wake the band and start HR Data Broadcast again (battery was 16%).
 2. Confirm the daemon reports `connected`, ~1 s sampling and no contact-loss
-   flags.
+   flags; the dashboard hint should disappear.
 3. Add the first manual sleep annotations.
 4. Run the controlled A/B/C experiment in `17_acquisition_system.md` §9.
 5. Reboot the host once and verify the daemon resumes automatically (the only
