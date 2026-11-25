@@ -1,11 +1,23 @@
-# Huawei Band 9 — Independent BLE Acquisition
+# Huawei Band 9 — Independent Acquisition and Statistical Analysis
 
-An independent, account-free data-acquisition project for the **Huawei Band 9
-(KIM-B19)**. The final runtime target is a Linux host with a Bluetooth adapter.
-Huawei Health and the Android phone are used only as a temporary reference
-implementation during reverse engineering.
+An independent, account-free project for the **Huawei Band 9 (KIM-B19)** with
+two equally important parts: a 24×7 BLE heart-rate acquisition service and a
+separate read-only statistical analysis application. The final runtime target is
+a Linux host with a Bluetooth adapter. Huawei Health and the Android phone are
+used only as a temporary reference implementation during reverse engineering.
 
 Repository: <https://github.com/blacxsnow/heart-rate-analytics>
+
+## Two independent applications
+
+| Application | Owns | Never does |
+|---|---|---|
+| **Acquisition** | BLE adapter, HRS stream, reconnect/watchdog, sessions, raw SQLite writes, live dashboard | statistical inference, raw-record edits |
+| **Analysis** | read-only SQLite access, descriptive/longitudinal statistics, analytics UI, report CLI | BLE connections, acquisition writes, raw-record edits |
+
+The boundary is deliberate: stopping the dashboard or analysis never stops
+acquisition; the analysis process has no BLE imports and opens SQLite with
+`mode=ro`.
 
 ## Status at a glance
 
@@ -24,11 +36,19 @@ Repository: <https://github.com/blacxsnow/heart-rate-analytics>
 | Real-time HR via FE86 (`0x19`) | **Hypothesis** | Huawhoop/Band 10 evidence; not seen on Band 9 yet |
 | SpO₂, HRV, stress, sleep, steps | **Partial** | automatic SpO₂ on/off confirmed; data paths not yet decoded |
 | Configurable aggressive intervals | **Confirmed absent in Huawei Health** | on-device capture: only on/off and alert thresholds |
+| Statistical summary + hourly/daily tables | **Implemented and tested** | read-only analytics dashboard, `docs/21_statistical_analytics.md` |
+| HR distribution + configurable bands | **Implemented and tested** | histogram, ECDF, box, P05–P95, band episodes |
+| Sleep, circadian heatmap, rolling baselines | **Implemented and tested** | manual sleep annotations, date×hour heatmap, provisional baselines |
+| Read-only analysis boundary | **Verified** | SQLite `mode=ro`; analysis has no BLE imports; raw records append-only |
 | Firmware modification | **Low feasibility** | Apollo3 secure boot, signed OTA, glued case, no recovery; see `docs/14_firmware_feasibility.md` |
 
 > The minimum success criterion is already met: a locally running Python
 > application receives timestamped heart rate from the Band 9 with no Huawei
 > Health and no Huawei account.
+>
+> The analysis criterion is met too: a separate read-only application produces
+> descriptive, distribution, sleep, circadian and longitudinal statistics from
+> that database without opening the BLE adapter or modifying raw observations.
 
 ## The important endpoint distinction
 
@@ -124,6 +144,121 @@ an interactive login. The daemon retries with exponential backoff until
 `docs/17_acquisition_system.md` for the schema, reliability design, web controls,
 sleep annotations, analysis definitions and the controlled HR-broadcast
 interference experiment.
+
+## Statistical analysis
+
+The analysis side is a first-class application, not a reporting afterthought. It
+has its own read-only dashboard sections and a separate CLI, and it treats the
+acquisition database as immutable input.
+
+```
+BLE HRS ──► acquisition daemon ──► SQLite (WAL, append-only raw_measurements)
+                                      │
+                                      ├── live acquisition dashboard
+                                      ├── read-only analytics section
+                                      └── band9-analyze (JSON/CSV/Markdown/PNG)
+```
+
+### Statistical ranges
+
+| Range | Meaning |
+|---|---|
+| Current session | Latest monitoring session start → now/session end |
+| Last 1 / 6 / 12 / 24 hours | Rolling window ending now |
+| Today / Yesterday | Local calendar day (today is partial) |
+| Last 7 / 28 days | Rolling window ending now |
+| Custom | Explicit start/end; future end is marked partial |
+
+All calendar grouping uses **Asia/Kolkata (IST, UTC+05:30)** by default. Hourly
+rows are a specific **date + hour**, not a merge of the same clock hour across
+days. Incomplete periods show the available data with an explicit warning; they
+are never zero-filled or interpolated.
+
+### Summary and aggregation
+
+| Feature | What it reports |
+|---|---|
+| Summary cards | Count, mean, median, min, max, SD, MAD, IQR, P05/P95, CV, range, recording duration, coverage |
+| Hourly table | Date, hour, count, mean, median, min, max, SD, MAD, IQR, P95, range, duration, coverage; sortable |
+| Daily table | Date, count, mean, median, min, max, SD, MAD, IQR, P95, coverage, duration, min-at, max-at, sustained 5-minute min/max, time-weighted mean, disconnect count |
+| Hourly drill-down | Click an hour to plot its raw HR trajectory with gaps preserved |
+
+Every row/period reports its own sample count and coverage. A 24-hour range with
+68 minutes of samples shows ~4.7% coverage and a warning rather than pretending
+to be complete.
+
+### Distribution and bands
+
+| Feature | What it reports |
+|---|---|
+| Histogram | Fixed-width bins, selectable 2/5/10 bpm |
+| ECDF | Proportion of recorded time below each BPM |
+| Box plot | Q1, median, Q3, 1.5×IQR whiskers and outliers |
+| Percentile bands | Hourly P05 / median / P95 |
+| HR bands | Editable intervals, time-weighted duration, % of monitored time, episode count, longest episode, stacked daily bars |
+
+The default bands are descriptive only (`<50`, `50–59`, …, `120+`). They are
+not diagnostic ranges or exercise-intensity classifications unless the user
+explicitly configures them for that purpose.
+
+### Sleep, circadian patterns and baselines
+
+| Feature | What it reports |
+|---|---|
+| Sleep statistics | Per annotated night: mean, median, min, max, SD, MAD, IQR, P05/P95, sustained 5-minute min/max, nadir BPM, time to nadir, nadir clock time, awake-resting proxy, sleep-vs-awake difference |
+| Sleep history | One row per annotation, including annotations with no samples |
+| Sleep-onset trajectory | 5-minute median HR aligned to bedtime, plus a mean trajectory across nights |
+| Circadian heatmap | Date × local hour, selectable mean/median/SD/MAD/P95; empty cells are not imputed |
+| Rolling baseline | 1 h, 6 h, 24 h, 7 d and 28 d rolling mean **and** median |
+| Deviations | 1-hour mean minus resting/sleep baseline; robust median/MAD score; conventional z-score |
+| Trend | OLS slope of daily mean HR (bpm/day) with R² |
+| Provisional status | Explicitly marked until enough data exists (28 days for the full baseline) |
+
+Sleep analysis uses **only manual sleep annotations** that overlap the selected
+range. It does not infer sleep stages, REM, or awakenings from the 1 Hz BPM
+stream. Awake-resting is a lower-decile proxy, not a clinical resting HR.
+
+### Metric definitions
+
+| Metric | Definition |
+|---|---|
+| SD | Sample standard deviation (`ddof=1`; 0 for n=1) |
+| MAD | Median of \|xᵢ − median\| (unscaled) |
+| IQR | P75 − P25 |
+| P05 / P95 | Percentiles with linear interpolation |
+| CV | `SD / mean × 100` |
+| Recording duration | Σ `min(Δᵢ, 5 s)` over adjacent observations, plus the median interval for the last sample |
+| Coverage | Recording duration ÷ period duration, clipped to 0–1 |
+| Sustained 5-minute HR | Rolling 5-minute mean requiring at least 150 observations; reported min/max |
+| Time-weighted mean | Observations weighted by time to the next sample, capped at 5 s |
+
+The 1 Hz BPM stream is **not** beat-to-beat HRV. The project does not compute
+RMSSD, SDNN, or pNN50 from it.
+
+### CLI reports
+
+```bash
+band9-analyze --db ~/.local/share/band9/acquisition.sqlite3 --out reports/analysis
+```
+
+This produces `quality.json`, `baseline.json`, `sleep.json`, `circadian.json`,
+`dynamics.json`, `longitudinal.json`, `sessions.json`, `daily.csv`,
+`summary.md`, and PNG figures. The analysis code opens SQLite read-only and
+cannot modify raw observations.
+
+### Immediate vs longitudinal value
+
+- **After 10 minutes:** summary cards, hourly statistics, distribution, bands,
+  and the 1-hour rolling baseline.
+- **After a few hours:** daily statistics, sleep rows for the previous night,
+  heatmap cells, and 6/24-hour baselines.
+- **After 7–28 days:** rolling medians, baseline deviations, daily trends, and
+  stable longitudinal comparisons. Until then the baseline is labelled
+  provisional.
+
+The analytics section lives below the live acquisition monitor and never
+changes existing acquisition controls. See `docs/21_statistical_analytics.md`
+for the API contract and exact definitions.
 
 ## Data model
 
