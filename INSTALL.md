@@ -38,8 +38,8 @@ rfkill list bluetooth
 ## One-command install
 
 ```bash
-git clone git@github.com:blacxsnow/fitness-band-heart-rate-monitor.git
-cd fitness-band-heart-rate-monitor
+git clone git@github.com:blacxsnow/heart-rate-analytics.git
+cd heart-rate-analytics
 ./install.sh
 ```
 

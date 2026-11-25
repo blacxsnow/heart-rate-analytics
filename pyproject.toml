@@ -46,6 +46,11 @@ band9 = "fitness_band.main:main"
 band9-acquire = "fitness_band.acquisition.service:main"
 band9-analyze = "fitness_band.analysis.report:main"
 
+[project.urls]
+Homepage = "https://github.com/blacxsnow/heart-rate-analytics"
+Repository = "https://github.com/blacxsnow/heart-rate-analytics"
+Issues = "https://github.com/blacxsnow/heart-rate-analytics/issues"
+
 [tool.setuptools.packages.find]
 where = ["src"]
 

@@ -5,6 +5,8 @@ An independent, account-free data-acquisition project for the **Huawei Band 9
 Huawei Health and the Android phone are used only as a temporary reference
 implementation during reverse engineering.
 
+Repository: <https://github.com/blacxsnow/heart-rate-analytics>
+
 ## Status at a glance
 
 | Capability | Status | Evidence |
