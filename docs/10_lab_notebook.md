@@ -218,7 +218,8 @@ hypothesis.
 - **Package:** `Kimi_DIFF_4.2.0.226(C00M06)-4.2.0.230(C00M07).bin.apk`,
   8,600,225 bytes, SHA-256
   `e027ff7af65b7a647675edc235504d72d5288f34c8668ed47ffe8e47b1da42f1`;
-  matches `filelist.xml`.
+  matches `filelist.xml`. Changelog (206,248 bytes) also matches; it names the
+  internal platform baseline `U9200-1V100R001CHNC00B018` (component `TCPU`).
 - **Container:** custom layout v1, tag `Kimi`, build `2026.08.28 12:06:45`,
   20 manifest entries, 384-byte authentication block at `0x11c1`, payload at
   `0x1341`. All 20 component SHA-256 digests verified; blobs are complete

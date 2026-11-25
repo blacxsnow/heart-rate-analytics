@@ -176,13 +176,18 @@ createTime 2026-09-13T16:00:00+0000
 url        https://update.hicloud.com/download/data/pub_13/HWHOTA_hota_900_9/.../
 ```
 
-That directory contains `changelog.xml` and:
+That directory contains `changelog.xml` (206,248 bytes; SHA-256
+`a7ff5649…b06a2d`, matching `filelist.xml`) and:
 
 ```
 Kimi_DIFF_4.2.0.226(C00M06)-4.2.0.230(C00M07).bin.apk
 size      8,600,225 bytes
 sha256    e027ff7af65b7a647675edc235504d72d5288f34c8668ed47ffe8e47b1da42f1
 ```
+
+The changelog names the internal platform baseline
+`U9200-1V100R001CHNC00B018` (component `TCPU`), which differs from the
+marketing firmware string.
 
 The file was downloaded and its SHA-256 matched `filelist.xml`. It was **not**
 sent to the band. Claimed versions older than `4.2.0.226` returned
