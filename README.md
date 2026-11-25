@@ -40,7 +40,25 @@ The Band 9 exposes **two different BLE identities**:
 The HR broadcast address is **not** the normal address. Always discover by name
 or service UUID; do not hard-code a MAC.
 
-## Quick start
+## Install
+
+The recommended setup is one user-level command:
+
+```bash
+./install.sh
+```
+
+It creates `.venv`, installs the API + analysis extras, installs and enables the
+systemd user units, and starts the dashboard. It does not use `sudo`, pair or
+flash the band, or modify raw data. See **[INSTALL.md](INSTALL.md)** for
+prerequisites, options (`--check`, `--no-services`, `--no-start`, `--no-venv`),
+service management, analysis, updates, uninstall and troubleshooting.
+
+```bash
+./install.sh --check       # inspect prerequisites without changing anything
+```
+
+## Manual install and CLI quick start
 
 Requirements: Linux, BlueZ, Python 3.11+, a powered Bluetooth adapter.
 
@@ -137,6 +155,8 @@ src/fitness_band/
   storage.py          SQLite + CSV/JSONL
   main.py             CLI
 services/             systemd user units + installer
+install.sh            one-command user-level installer
+INSTALL.md            full setup, service, update and troubleshooting guide
 capabilities/         machine-readable capability matrix
 docs/                 research, GATT, protocol, architecture, analytics
 captures/             sanitised reports; raw data stays local

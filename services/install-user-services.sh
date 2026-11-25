@@ -16,7 +16,14 @@ for unit in huawei-acquisition huawei-web; do
 done
 
 systemctl --user daemon-reload
-systemctl --user enable --now huawei-acquisition.service huawei-web.service
+systemctl --user enable huawei-acquisition.service huawei-web.service
+
+if [[ "${BAND9_NO_START:-0}" == "1" ]]; then
+  echo "services enabled; not started (BAND9_NO_START=1)"
+else
+  # Restart so a rerun of the installer picks up new code.
+  systemctl --user restart huawei-acquisition.service huawei-web.service
+fi
 
 if loginctl enable-linger "$USER" 2>/dev/null; then
   echo "lingering enabled for $USER (services start at boot without login)"

@@ -64,6 +64,7 @@ Start here.
 ## Public repository
 
 - **License:** MIT (`LICENSE`)
+- **Installation:** `INSTALL.md` and `install.sh`
 - **Contributing:** `CONTRIBUTING.md`
 - **Security and privacy:** `SECURITY.md`
 - **Code of conduct:** `CODE_OF_CONDUCT.md`
