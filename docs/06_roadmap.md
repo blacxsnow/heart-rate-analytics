@@ -31,11 +31,12 @@ plausible BPM. **Met.**
 - [x] APK pulled and decompiled.
 - [x] HCI snoop log identified.
 - [x] Frida server running.
-- [ ] Pair band with Huawei Health.
-- [ ] Capture E01–E10 experiments (see `07_android_reference_plan.md`).
-- [ ] Decode HCI/ATT to a command timeline.
-- [ ] Hook `o.djr`, `o.djp`, `o.dig`, `o.dip`, HiChain managers.
-- [ ] Correlate with Gadgetbridge/Huawhoop.
+- [x] Pair band with Huawei Health.
+- [x] Capture reconnect/initialization and settings experiments.
+- [x] Decode FE86 traffic (AES-GCM plaintext recovered).
+- [x] Hook GATT and Java crypto (HiChain classes are in a plugin loader).
+- [x] Correlate with Gadgetbridge/Huawhoop.
+- [x] Record firmware/model (`Kimi-B19FB`, `4.2.0.230(C00M07)`).
 
 **Acceptance:** a decoded capture showing the exact auth sequence, the
 measurement-start commands, and the notification payloads for HR/SpO₂.
@@ -46,8 +47,9 @@ measurement-start commands, and the notification payloads for HR/SpO₂.
 
 **Goal:** authenticate the normal FE86 endpoint from Linux.
 
-- [ ] Read LinkParams on the normal endpoint (auth family/version).
-- [ ] Implement/port the matching HiChain Lite or HiChain3 flow.
+- [x] Read LinkParams on the normal endpoint (authVersion 1, HiChain3).
+- [x] Capture the complete HiChain3 JSON exchange.
+- [ ] Implement/port the matching HiChain3 flow (needs the account-bound key).
 - [ ] Store keys locally with 0600 permissions.
 - [ ] Read product info, firmware, battery, supported services/commands.
 - [ ] Reconnect with a stored session key.
@@ -69,8 +71,9 @@ reads the real firmware string.
 - [ ] Test `0x19/0x01` live HR (`hr_type=1`) on Band 9.
 - [ ] Test `0x19/0x05` RRI/SQI (`hr_type=3`) for HRV.
 - [ ] Measure actual notification rate and jitter.
-- [ ] Test automatic SpO₂ toggle (`0x07/0x24`).
+- [x] Test automatic SpO₂ toggle (`0x07/0x24`) — on/off only, confirmed.
 - [ ] Determine whether SpO₂ is live or only historical.
+- [x] Confirm there is no app-level sampling interval.
 - [ ] Search for hidden interval TLVs; otherwise document the firmware limit.
 - [ ] Compare HRS and proprietary HR simultaneously/alternately.
 

@@ -141,7 +141,44 @@ fastest verified real-time path on this unit.
 - A clear boundary between what is possible (on/off, history, 1 Hz HRS) and
   what is not (configurable sampling intervals via the app).
 
-## 7. Reproduction
+## 8. Decision point: how to get independent auth
+
+The protocol is understood, but the HiChain3 long-term key is account-bound.
+There are three practical paths:
+
+### A. Keep the HRS path only (no auth)
+
+- Pros: already working, no reset, no key.
+- Cons: 1 Hz HR only; no SpO₂, history, stress, sleep, battery, settings.
+- This is the current production-safe state.
+
+### B. Extract the long-term key from Huawei Health (root, no reset)
+
+- Try the app's private storage, HiChain/keystore entries, and runtime
+  `HwDeviceAuthManager` / `HiChainAuthManager` state.
+- Pros: preserves the band's data and current phone pairing.
+- Cons: may be protected by Huawei Keystore/HiChain; no guarantee; keys are
+  highly sensitive and must never leave the local machine.
+
+### C. Factory reset + bind a new key (Gadgetbridge or our client)
+
+- Factory reset erases on-device history and unpairs the phone.
+- Pair with Gadgetbridge (open source) or a minimal implementation using a
+  fresh random key, then export/import that key to the Linux client.
+- Pros: clean, reproducible, no Huawei account.
+- Cons: data loss; requires explicit consent; firmware may still gate auth.
+
+**Recommendation:** first try **B** (read-only, no reset). If the key is not
+accessible, use **C** only with explicit consent. Continue using HRS in the
+meantime.
+
+## 9. Firmware note
+
+The unit reports **`Kimi-B19FB`**, firmware **`4.2.0.230(C00M07)`**. This is
+newer than the `3.1.0.31` discussed in Gadgetbridge issue #3784 and uses
+HiChain3. Do not apply older-firmware assumptions to this unit.
+
+## 10. Reproduction
 
 ```bash
 # Pull HCI (Android caches btsnoop under cached_hci)
