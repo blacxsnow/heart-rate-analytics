@@ -17,7 +17,7 @@ implementation during reverse engineering.
 | Reconnect after BLE drop | **Verified** | monitor reconnect loop |
 | HR without Huawei account | **Verified** | no pairing/bonding used |
 | HR with band screen off | **Verified** | 1.17 s max gap over 212 s |
-| HR after reboot / charging | **Normal restart ends broadcast** | UI requires exiting broadcast to reach Settings; manual re-enable |
+| HR after reboot / charging | **Restart requires exiting broadcast** | auto-resume untested; manual re-enable likely |
 | Proprietary FE86 authentication | **HiChain3 handshake captured** | authVersion 1, deviceSupportType 4; reimplementation pending |
 | Real-time HR via FE86 (`0x19`) | **Hypothesis** | Huawhoop/Band 10 evidence; not seen on Band 9 yet |
 | SpO₂, HRV, stress, sleep, steps | **Partial** | automatic SpO₂ on/off confirmed; data paths not yet decoded |

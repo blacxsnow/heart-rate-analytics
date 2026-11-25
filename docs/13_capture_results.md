@@ -145,7 +145,7 @@ fastest verified real-time path on this unit.
 
 - HR Data Broadcast survives screen-off and host disconnect.
 - Reaching the band's Settings requires exiting the broadcast; a normal restart
-  therefore ends it, and no auto-resume was observed.
+  therefore starts with the mode off. Auto-resume was not tested.
 - Charging and a forced hard reboot while active were not tested (experiment
   stopped by user choice).
 - **Conclusion:** the HRS path provides continuous HR while active but does not

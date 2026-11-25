@@ -150,8 +150,8 @@ Verified:
 Not verified / negative UI finding:
 
 - To reach the band's **Settings**, the user must exit HR Data Broadcast.
-- A normal restart therefore ends the broadcast before the reboot; there is no
-  evidence of auto-resume.
+- A normal restart therefore ends the broadcast before the reboot; auto-resume
+  was not tested.
 - A hard reboot while broadcast is active and charging behaviour were not
   tested (user chose to stop the experiment).
 
@@ -210,6 +210,6 @@ Sanitised GATT JSON is stored in `captures/gatt/`.
 | No RR intervals in HRS | **CONFIRMED** |
 | Broadcast survives screen-off | **CONFIRMED (3.5 min)** |
 | Broadcast survives disconnect/reconnect | **CONFIRMED** (host reconnect) |
-| Broadcast survives reboot/charging | **NO auto-resume evidence**; normal restart requires exiting broadcast to reach Settings; charging untested |
+| Broadcast survives reboot/charging | **Normal restart requires exiting broadcast first**; auto-resume untested; charging untested |
 | DIS values are placeholders | **CONFIRMED** |
 | Vendor service roles | **UNKNOWN** |

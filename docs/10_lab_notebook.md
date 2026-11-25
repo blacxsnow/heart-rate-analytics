@@ -196,7 +196,7 @@ hypothesis.
 - **Baseline:** HR Data Broadcast active; endpoint `HUAWEI Band HR-<suffix>`
   advertising (after releasing a stale Linux link).
 - **Finding:** reaching the band's Settings requires exiting HR Data Broadcast.
-  A normal restart therefore ends the broadcast; no auto-resume was observed.
+  A normal restart requires exiting the broadcast to reach Settings, so the mode is off before reboot; auto-resume was not tested.
 - **Verified:** screen-off (3.5 min) and host disconnect/reconnect.
 - **Not tested:** hard reboot while active, charging.
 - **Conclusion:** HRS is continuous while active but does **not** provide

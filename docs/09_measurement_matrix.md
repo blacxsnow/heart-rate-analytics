@@ -103,7 +103,7 @@ Any claim otherwise needs a captured command carrying an interval parameter.
 - HRS gives continuous HR while the broadcast mode is active. It survives
   screen-off and host disconnect.
 - The band's UI requires **exiting** HR Data Broadcast to reach Settings, so a
-  normal restart ends the mode; there is no evidence of auto-resume.
+  normal restart starts with the mode off; auto-resume was not tested.
 - Therefore HRS alone does **not** meet "24×7 without toggling" across reboots.
 - Proprietary continuous HR could remove the manual toggle, but requires
   HiChain3 authentication.
