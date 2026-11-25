@@ -21,6 +21,10 @@ exists; it is done when the physical device proves it.
 **Acceptance:** `band9 hr --duration 60` stores >50 measurements and prints
 plausible BPM. **Met.**
 
+**Caveat:** this is continuous while the broadcast is active. A normal restart
+requires exiting the broadcast to reach Settings, so toggle-free 24×7 is not
+met by HRS. See `13_capture_results.md` §7.
+
 ---
 
 ## P1 — Android reference capture (IN PROGRESS)

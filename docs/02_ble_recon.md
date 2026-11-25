@@ -139,6 +139,26 @@ Decoded flags:
 - Values in the 90s were plausible for the wearer at rest (not a synthetic
   constant).
 
+## 5.1 Persistence and the 24×7 caveat
+
+Verified:
+
+- Broadcast survives the display turning off (3.5 min soak).
+- Broadcast survives the host disconnecting and reconnecting.
+- The band continues measuring while connected to a host.
+
+Not verified / negative UI finding:
+
+- To reach the band's **Settings**, the user must exit HR Data Broadcast.
+- A normal restart therefore ends the broadcast before the reboot; there is no
+  evidence of auto-resume.
+- A hard reboot while broadcast is active and charging behaviour were not
+  tested (user chose to stop the experiment).
+
+**Consequence:** the HRS path does not provide a guaranteed 24×7 stream across
+reboots without a manual toggle. Proprietary authenticated HR is the only
+candidate for a persistent mode.
+
 ## 6. Device Information Service caveat
 
 On the broadcast endpoint the DIS values are generic placeholders:
@@ -190,6 +210,6 @@ Sanitised GATT JSON is stored in `captures/gatt/`.
 | No RR intervals in HRS | **CONFIRMED** |
 | Broadcast survives screen-off | **CONFIRMED (3.5 min)** |
 | Broadcast survives disconnect/reconnect | **CONFIRMED** (host reconnect) |
-| Broadcast survives reboot/charging | **UNTESTED** |
+| Broadcast survives reboot/charging | **NO auto-resume evidence**; normal restart requires exiting broadcast to reach Settings; charging untested |
 | DIS values are placeholders | **CONFIRMED** |
 | Vendor service roles | **UNKNOWN** |

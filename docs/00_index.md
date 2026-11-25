@@ -30,6 +30,9 @@ Start here.
   and historical record field decoding.
 - **Confirmed hardware limit:** Huawei Health exposes only on/off for
   automatic HR and SpO₂; there is no sampling-interval control.
+- **24×7 caveat:** the HRS broadcast does not survive a normal restart
+  (the UI requires exiting it to reach Settings); manual re-enable is needed.
+  Proprietary HiChain3 authentication is the path to a persistent mode.
 - **Not attempted:** firmware modification.
 
 ## Quick commands

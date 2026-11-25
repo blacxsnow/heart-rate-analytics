@@ -191,6 +191,18 @@ hypothesis.
 - Decide between HRS (simple, 1 Hz) and proprietary (auth, history, settings).
 - Test HRS after reboot/charging for true 24×7.
 
+## N018 — HRS persistence / 24×7 result
+
+- **Baseline:** HR Data Broadcast active; endpoint `HUAWEI Band HR-<suffix>`
+  advertising (after releasing a stale Linux link).
+- **Finding:** reaching the band's Settings requires exiting HR Data Broadcast.
+  A normal restart therefore ends the broadcast; no auto-resume was observed.
+- **Verified:** screen-off (3.5 min) and host disconnect/reconnect.
+- **Not tested:** hard reboot while active, charging.
+- **Conclusion:** HRS is continuous while active but does **not** provide
+  toggle-free 24×7 across restarts. Proprietary authenticated HR is required
+  for that requirement.
+
 ---
 
 ## Open experiments (next)

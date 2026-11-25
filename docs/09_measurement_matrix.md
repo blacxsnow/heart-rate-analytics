@@ -100,9 +100,13 @@ Any claim otherwise needs a captured command carrying an interval parameter.
 
 ## 7. 24×7 implications
 
-- HRS gives 24×7 HR **if** the broadcast mode survives reboot/charging. It
-  currently survives screen-off and disconnect; reboot/charging is untested.
-- Proprietary continuous HR could remove the manual toggle, but requires auth.
+- HRS gives continuous HR while the broadcast mode is active. It survives
+  screen-off and host disconnect.
+- The band's UI requires **exiting** HR Data Broadcast to reach Settings, so a
+  normal restart ends the mode; there is no evidence of auto-resume.
+- Therefore HRS alone does **not** meet "24×7 without toggling" across reboots.
+- Proprietary continuous HR could remove the manual toggle, but requires
+  HiChain3 authentication.
 - SpO₂/HRV/steps/sleep require proprietary sync; they cannot be acquired from
   HRS alone.
 - Battery life will degrade with more frequent optical measurements; the band's

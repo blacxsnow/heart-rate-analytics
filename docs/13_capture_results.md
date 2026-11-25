@@ -141,6 +141,17 @@ fastest verified real-time path on this unit.
 - A clear boundary between what is possible (on/off, history, 1 Hz HRS) and
   what is not (configurable sampling intervals via the app).
 
+## 7. 24×7 persistence result
+
+- HR Data Broadcast survives screen-off and host disconnect.
+- Reaching the band's Settings requires exiting the broadcast; a normal restart
+  therefore ends it, and no auto-resume was observed.
+- Charging and a forced hard reboot while active were not tested (experiment
+  stopped by user choice).
+- **Conclusion:** the HRS path provides continuous HR while active but does not
+  meet toggle-free 24×7 across restarts. Proprietary authenticated HR is the
+  only remaining candidate.
+
 ## 8. Decision point: how to get independent auth
 
 The protocol is understood, but the HiChain3 long-term key is account-bound.
