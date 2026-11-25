@@ -80,9 +80,11 @@ entries:
     evidence:
       - docs/04_protocol_spec.md
       - docs/13_capture_results.md
+      - docs/16_hichain3_streams.md
     notes: >-
-      Request/response commands are confirmed. The minute-record field layout
-      is only partially decoded; expect HR plus other per-minute metrics.
+      Request/response commands and the 0x81/0x84 envelope are confirmed.
+      Inner 0x06/0x07/0x08 fields are preserved raw and only partially decoded;
+      expect HR plus other per-minute metrics. Times are Unix seconds.
 
   - id: spo2_auto_setting
     measurement: spo2
@@ -120,19 +122,20 @@ entries:
   - id: spo2_history
     measurement: spo2
     realtime: "no"
-    historical: "unknown"
+    historical: "partial"
     sampling_hz: null
     resolution_bits: null
     timestamp_precision: unknown
-    access: "unknown; device files spo2.bin, spo2_data_sleep.bin, osa_spo2_data.bin"
+    access: "0x07/0x1E, 0x07/0x1F, 0x07/0x26 window queries; files spo2*.bin"
     dependencies: [hichain3]
-    verification: "hypothesis"
+    verification: "partial"
     evidence:
+      - docs/16_hichain3_streams.md
       - docs/15_firmware_static_analysis.md
-      - docs/04_protocol_spec.md
     notes: >-
-      Firmware stores SpO2 and sleep/OSA SpO2 data in files. No confirmed
-      protocol request for these files exists yet.
+      Window queries were confirmed in the live capture but returned no records
+      in that session. Inner record layout is not decoded. No spot measurement
+      was triggered from the phone.
 
   - id: ibi_hrv
     measurement: ibi_hrv
@@ -141,15 +144,16 @@ entries:
     sampling_hz: null
     resolution_bits: null
     timestamp_precision: null
-    access: "unverified; 0x19/0x05 RRI is a Band 10 report only"
+    access: "0x2C/0x01 rrisqi_data.bin (no file returned); HRV tab in app"
     dependencies: [hichain3]
-    verification: "hypothesis"
+    verification: "partial"
     evidence:
-      - docs/04_protocol_spec.md
+      - docs/16_hichain3_streams.md
       - docs/15_firmware_static_analysis.md
     notes: >-
-      Firmware has RRI/sleep-RRI model files, but no Band 9 RRI packet has been
-      captured. Ordinary BPM must not be used to infer IBI/HRV availability.
+      The app exposes an HRV tab and requests rrisqi_data.bin; the band
+      returned 0x00023281 (no new file) and no RRI packet was decoded. Ordinary
+      BPM must not be used to infer IBI/HRV availability.
 
   - id: raw_ppg
     measurement: raw_ppg

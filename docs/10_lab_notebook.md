@@ -267,6 +267,34 @@ hypothesis.
   confirmed command builders), `fitness_band.capabilities` +
   `capabilities/matrix.yaml`, tests. 44 tests pass.
 
+## N021 — Full HiChain3 + authenticated stream capture
+
+- **Setup:** Health running normally (no Frida spawn); low-overhead GATT+GCM
+  observer attached to the main process, then to `:PhoneService`. The BLE/GATT
+  owner is **`:PhoneService`**, not the UI process.
+- **Fresh connection:** toggled Bluetooth off/on; `:PhoneService` reconnected
+  and re-authenticated. 392 writes / 330 notifications were captured on first
+  load; 245/230 after further actions.
+- **HiChain3:** complete JSON exchange recorded:
+  `17 → 32785 → 18 → 32786 → 19 → "com.huawei.health"`, with `isoSalt`,
+  `seed`, `token`, `returnCodeMac`, `nonce`, `encResult` and `keyLength=32`.
+- **Session key:** a 32-byte AES-GCM key was observed for the band TLV layer
+  (500 GCM operations) and used to decrypt the whole stream offline. It is
+  local-only and not published.
+- **Sliced frames:** corrected the decoder — each fragment has a one-byte
+  sequence marker (`00`, `01`, `02`, …); stripping it removed the stray
+  `0x01`/`0x02` bytes from the JSON. Test added.
+- **HR history:** `0x07/0x0A` request with Unix-second window; `0x07/0x0B`
+  response with `0x81` array, `0x03` start time, `0x84` minute records; the
+  app also requested `0x07/0x0C` status data (`0x0D`).
+- **SpO₂:** automatic setting on (`0x07/0x24 01 01 01`); windows
+  `0x07/0x1E/0x1F/0x26` were queried for the last day but returned no records.
+- **HRV/RRI:** the app has an HRV tab and requested `rrisqi_data.bin` via
+  `0x2C/0x01`; the band answered `0x00023281` (no new file). No RRI records yet.
+- **New offline tools:** `scripts/decode_trackb.py` (log → reassembled,
+  decrypted JSONL), `fitness_band.history` (partial 0x0B/0x0D envelope
+  parser), synthetic tests. 49 tests pass.
+
 ---
 
 ## Open experiments (next)

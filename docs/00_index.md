@@ -40,6 +40,10 @@ Start here.
   loads at `0x06040000`; the band itself implements HiChain3 with HKS-backed
   group keys in `/user/deviceauth`; PPG, sleep/OSA, RRI and health history are
   file-backed services.
+- **Live authenticated capture (2026-11-25):** full HiChain3 JSON exchange,
+  32-byte per-session AES-GCM key, HR-history window/records (`0x07/0x0A/B`,
+  `0x0C/D`), SpO₂ window queries (`0x1E/0x1F/0x26`, no data yet) and an
+  `rrisqi_data.bin` request (no file). See `16_hichain3_streams.md`.
 - **Capability matrix:** `capabilities/matrix.yaml` (validated by
   `fitness_band.capabilities`) separates confirmed, partial, hypothesis and
   unknown streams.

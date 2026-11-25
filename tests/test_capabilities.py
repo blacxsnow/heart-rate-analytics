@@ -33,7 +33,8 @@ def test_load_repository_matrix() -> None:
     assert matrix["hr_hqs"].sampling_hz == 1.0
     assert matrix["raw_ppg"].verification == "unknown"
     assert matrix["raw_ppg"].realtime == "unknown"
-    assert matrix["ibi_hrv"].verification == "hypothesis"
+    assert matrix["ibi_hrv"].verification == "partial"
+    assert matrix["spo2_history"].verification == "partial"
     assert "hichain3" in matrix["spo2_on_demand"].dependencies
 
 

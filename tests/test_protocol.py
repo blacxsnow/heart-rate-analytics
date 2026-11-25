@@ -13,7 +13,9 @@ from fitness_band.protocol import (
     build_link_params_request,
     classify_auth_type,
     crc16,
+    crc16_bytes,
     decode_varint,
+    encode_tlvs,
     encode_varint,
 )
 
@@ -45,6 +47,35 @@ def test_decoder_handles_fragmented_and_concatenated_frames():
     assert list(decoder.feed(raw[:5])) == []
     frames = list(decoder.feed(raw[5:]))
     assert len(frames) == 2
+
+
+def _slice_frame(slice_type: int, content: bytes) -> bytes:
+    body = (
+        bytes([0x5A])
+        + (len(content) + 1).to_bytes(2, "big")
+        + bytes([slice_type])
+        + content
+    )
+    return body + crc16_bytes(body)
+
+
+def test_sliced_frame_reassembly_strips_sequence_bytes():
+    payload = bytes([SERVICE_DEVICE_CONFIG, CMD_LINK_PARAMS]) + encode_tlvs(
+        [TLV(1), TLV(2, b"x" * 400)]
+    )
+    chunks = [payload[:200], payload[200:400], payload[400:]]
+    raw = (
+        _slice_frame(1, b"\x00" + chunks[0])
+        + _slice_frame(2, b"\x01" + chunks[1])
+        + _slice_frame(3, b"\x02" + chunks[2])
+    )
+
+    frames = list(FrameDecoder().feed(raw))
+
+    assert len(frames) == 1
+    assert frames[0].payload == payload
+    assert frames[0].service_id == SERVICE_DEVICE_CONFIG
+    assert frames[0].command_id == CMD_LINK_PARAMS
 
 
 def test_bad_crc_rejected():

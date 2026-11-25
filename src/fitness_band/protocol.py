@@ -235,12 +235,16 @@ class FrameDecoder:
             return None
         if not self._slices:
             return None
-        self._slices.append(content)
+        # Every fragment carries a 1-byte sequence marker: 00 on the first
+        # fragment, then 01, 02, ... on the continuations. Strip it from the
+        # continuation before concatenating, otherwise a stray 0x01/0x02
+        # appears inside the reassembled service/command payload.
+        self._slices.append(content[1:])
         if slice_type != 3:
             return None
         first = self._slices[0]
         # First slice: flag byte + service + command + TLV. Later slices: TLV.
-        payload = first[1:] + b"".join(part for part in self._slices[1:])
+        payload = first[1:] + b"".join(self._slices[1:])
         synthetic = bytes([MAGIC]) + (len(payload) + 1).to_bytes(2, "big") + b"\x00" + payload
         synthetic += crc16_bytes(synthetic)
         self._slices = []
