@@ -75,7 +75,9 @@ SERVICE_NAMES = {
 
 # Advertising names. The normal (proprietary) endpoint and the standard-HRS
 # broadcast endpoint use different names and different random/static addresses.
-NORMAL_NAME_PREFIX = "HUAWEI Band 9-"
+# The numeric part is not stable across models/firmware ("HUAWEI Band 9-...",
+# "HUAWEI Band 10-..."), so match the family and exclude the HR endpoint.
+NORMAL_NAME_PREFIX = "HUAWEI Band "
 BROADCAST_NAME_PREFIX = "HUAWEI Band HR-"
 
 
@@ -88,8 +90,10 @@ def u(short: str) -> str:
 def is_huawei_band9_name(name: str | None) -> bool:
     if not name:
         return False
-    name = name.strip()
-    return name.lower().startswith(NORMAL_NAME_PREFIX.lower())
+    normalized = name.strip().lower()
+    return normalized.startswith(NORMAL_NAME_PREFIX.lower()) and not normalized.startswith(
+        BROADCAST_NAME_PREFIX.lower()
+    )
 
 
 def is_huawei_hr_broadcast_name(name: str | None) -> bool:

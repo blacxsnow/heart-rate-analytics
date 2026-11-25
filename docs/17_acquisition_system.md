@@ -113,7 +113,10 @@ The restart button on the dashboard is disabled by default. Enable it with
 
 - Connection/service status, current HR, last measurement, sampling interval,
   session duration, total measurements, DB size, last connection/disconnection,
-  reconnect attempts, spool depth.
+  reconnect attempts, spool depth, BLE adapter/band/broadcast visibility.
+- All displayed times are explicit **Asia/Kolkata (IST, UTC+05:30)**, including
+  the chart axis and retry countdown, regardless of the browser timezone.
+  Annotation date-time input is interpreted as IST and stored as UTC.
 - Live SVG graph for 1/5/15/60 minutes; line breaks at gaps and red bands for
   disconnection intervals.
 - Start/connect/disconnect/stop/reconnect controls.

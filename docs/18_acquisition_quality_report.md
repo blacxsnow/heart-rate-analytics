@@ -30,8 +30,9 @@ unit was killed and restarted.
 
 | Test | Result |
 |---|---|
-| Unit/integration suite | **81 passed** |
+| Unit/integration suite | **86 passed** |
 | Reconnect state machine | 9 fake-BLE tests: link drop, manual reconnect, backoff cancellation, pause/resume, stale watchdog, missing endpoint, stale BlueZ link, cache removal, broadcast-off classification |
+| Advertisement classification | 5 tests, including the live `HUAWEI Band 10-TEST` normal name and HR/normal separation |
 | Simulated 60 s acquisition | 72 measurements at ~0.5 s; DB/session/events/state written |
 | Live dashboard API | status, HR points, CSV export, annotations all returned successfully |
 | Sleep annotation | created, listed and deleted; end-before-start normalised to next day |
@@ -112,7 +113,17 @@ every disconnect, and re-scans. It also treats the normal endpoint as positive
 evidence that the band is on while HR Data Broadcast is off, and the dashboard
 shows that instruction instead of a generic connection error.
 
-### 4.2 Time zone display
+### 4.2 Normal-endpoint name mismatch
+
+The live normal endpoint advertises as **`HUAWEI Band 10-TEST`**, not the
+`HUAWEI Band 9-...` form recorded during the first recon. The original name
+matcher accepted only `HUAWEI Band 9-`, so the daemon could not classify the
+band as nearby even while its normal endpoint was visible. The matcher now
+accepts `HUAWEI Band <model>-...` and explicitly excludes the `HUAWEI Band HR-`
+endpoint. With this fix the live daemon reports `band_visible=true` and
+`hr_broadcast_active=false` when the band is on but broadcasting is off.
+
+### 4.3 Time zone display
 
 All dashboard timestamps, chart labels, annotation times and retry times are
 rendered explicitly in `Asia/Kolkata` (IST, UTC+05:30), independent of the
