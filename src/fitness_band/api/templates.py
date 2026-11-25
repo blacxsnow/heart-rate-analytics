@@ -162,6 +162,91 @@ DASHBOARD_HTML = r"""<!doctype html>
     </form>
     <div id="ann-list" style="margin-top:10px"><div class="muted">No annotations yet.</div></div>
   </section>
+
+  <style>
+    .analytics h3 { font-size:15px; margin:18px 0 8px; font-weight:650; }
+    .analytics .inline { display:inline-flex; align-items:center; gap:6px; color:var(--muted); font-size:12px; }
+    .analytics select, .analytics input[type="datetime-local"] {
+      background:#0f151c; color:var(--text); border:1px solid #334252;
+      border-radius:8px; padding:6px 8px; font:inherit;
+    }
+    .analytics .table-wrap {
+      overflow:auto; max-height:540px; border:1px solid #263241; border-radius:10px;
+    }
+    .analytics table { width:100%; border-collapse:collapse; font-size:12px; }
+    .analytics th, .analytics td {
+      padding:6px 8px; border-bottom:1px solid #263241; text-align:right;
+      white-space:nowrap;
+    }
+    .analytics th {
+      position:sticky; top:0; z-index:1; background:var(--panel);
+      color:var(--muted); font-weight:600;
+    }
+    .analytics th.sortable { cursor:pointer; user-select:none; }
+    .analytics th.sortable:hover { color:var(--text); }
+    .analytics td:first-child, .analytics th:first-child,
+    .analytics td:nth-child(2), .analytics th:nth-child(2) { text-align:left; }
+    .analytics tbody tr:hover { background:var(--panel2); }
+    .analytics tr.clickable { cursor:pointer; }
+    .analytics .empty { color:var(--muted); padding:14px; text-align:left; }
+    .analytics .warn { color:var(--warn); }
+    .analytics .low { color:var(--warn); }
+    .analytics [hidden] { display:none !important; }
+    .analytics .traj { margin-top:14px; }
+    .analytics .traj svg { height:240px; }
+  </style>
+
+  <section class="panel analytics" id="analytics">
+    <div class="row between" style="margin-bottom:10px">
+      <strong>Statistical analytics</strong>
+      <span class="muted">Read-only · IST · available data only</span>
+    </div>
+    <div class="row" style="margin-bottom:10px; gap:10px">
+      <label class="inline">Range
+        <select id="analytics-range">
+          <option value="current_session">Current session</option>
+          <option value="1h">Last 1 hour</option>
+          <option value="6h">Last 6 hours</option>
+          <option value="12h">Last 12 hours</option>
+          <option value="24h">Last 24 hours</option>
+          <option value="today">Today</option>
+          <option value="yesterday">Yesterday</option>
+          <option value="7d">Last 7 days</option>
+          <option value="28d">Last 28 days</option>
+          <option value="custom">Custom range</option>
+        </select>
+      </label>
+      <span id="analytics-custom" class="row" hidden>
+        <label class="inline">From <input id="analytics-start" type="datetime-local"></label>
+        <label class="inline">To <input id="analytics-end" type="datetime-local"></label>
+        <button id="analytics-apply">Apply</button>
+      </span>
+      <button id="analytics-refresh">Refresh</button>
+      <span id="analytics-range-label" class="muted"></span>
+    </div>
+    <div id="analytics-warnings" class="warn" style="margin-bottom:8px"></div>
+    <div class="cards" id="analytics-summary"></div>
+
+    <h3>Hourly statistics</h3>
+    <div class="table-wrap">
+      <table id="analytics-hourly"><tbody><tr><td class="empty">Loading…</td></tr></tbody></table>
+    </div>
+    <p class="muted" id="analytics-hourly-note" style="margin:6px 0 0"></p>
+
+    <h3>Daily statistics</h3>
+    <div class="table-wrap">
+      <table id="analytics-daily"><tbody><tr><td class="empty">Loading…</td></tr></tbody></table>
+    </div>
+
+    <div id="analytics-traj" class="traj" hidden>
+      <div class="row between" style="margin-bottom:6px">
+        <strong id="analytics-traj-title"></strong>
+        <button id="analytics-traj-close">Close</button>
+      </div>
+      <svg id="analytics-traj-chart" viewBox="0 0 1000 240" preserveAspectRatio="none" role="img" aria-label="Hourly heart-rate trajectory"></svg>
+      <div id="analytics-traj-stats" class="muted" style="margin-top:6px"></div>
+    </div>
+  </section>
 </main>
 <script>
 const $ = (id) => document.getElementById(id);
@@ -492,6 +577,290 @@ setInterval(refreshHR, 1000);
 setInterval(refreshAnnotations, 10000);
 setInterval(refreshBattery, 30000);
 setInterval(tickClock, 1000);
+</script>
+<script>
+const $a = (id) => document.getElementById(id);
+const A = {
+  range: 'current_session',
+  data: null,
+  hourlySort: { key: 'hour_start_utc', dir: 'asc' },
+  dailySort: { key: 'date', dir: 'desc' },
+  loading: false,
+};
+
+function aNum(value, digits = 1) {
+  if (value == null || Number.isNaN(Number(value))) return '—';
+  return Number(value).toFixed(digits);
+}
+function aInt(value) {
+  if (value == null || Number.isNaN(Number(value))) return '—';
+  return String(Math.round(Number(value)));
+}
+function aPct(value) {
+  if (value == null || Number.isNaN(Number(value))) return '—';
+  return `${(Number(value) * 100).toFixed(1)}%`;
+}
+function aClock(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '—';
+  return fmtClockTime(d.getTime());
+}
+function aCard(label, value, sub) {
+  return `<div class="card"><div class="label">${label}</div><div class="value">${value}</div><div class="sub">${sub || '&nbsp;'}</div></div>`;
+}
+
+const HOURLY_COLUMNS = [
+  { key: 'date', label: 'Date', render: r => r.date },
+  { key: 'hour', label: 'Hour', render: r => r.hour },
+  { key: 'count', label: 'Count', render: r => aInt(r.count) },
+  { key: 'mean', label: 'Mean', render: r => aNum(r.mean) },
+  { key: 'median', label: 'Median', render: r => aNum(r.median) },
+  { key: 'min', label: 'Min', render: r => aInt(r.min) },
+  { key: 'max', label: 'Max', render: r => aInt(r.max) },
+  { key: 'sd', label: 'SD', render: r => aNum(r.sd) },
+  { key: 'mad', label: 'MAD', render: r => aNum(r.mad) },
+  { key: 'iqr', label: 'IQR', render: r => aNum(r.iqr) },
+  { key: 'p95', label: 'P95', render: r => aNum(r.p95) },
+  { key: 'range', label: 'Range', render: r => aInt(r.range) },
+  { key: 'duration_seconds', label: 'Duration', render: r => fmtDuration(r.duration_seconds) },
+  { key: 'coverage', label: 'Coverage', render: r => aPct(r.coverage), cls: r => r.low_coverage ? 'low' : '' },
+];
+
+const DAILY_COLUMNS = [
+  { key: 'date', label: 'Date', render: r => r.date },
+  { key: 'count', label: 'Count', render: r => aInt(r.count) },
+  { key: 'mean', label: 'Mean', render: r => aNum(r.mean) },
+  { key: 'median', label: 'Median', render: r => aNum(r.median) },
+  { key: 'min', label: 'Min', render: r => aInt(r.min) },
+  { key: 'max', label: 'Max', render: r => aInt(r.max) },
+  { key: 'sd', label: 'SD', render: r => aNum(r.sd) },
+  { key: 'mad', label: 'MAD', render: r => aNum(r.mad) },
+  { key: 'iqr', label: 'IQR', render: r => aNum(r.iqr) },
+  { key: 'p95', label: 'P95', render: r => aNum(r.p95) },
+  { key: 'coverage', label: 'Coverage', render: r => aPct(r.coverage), cls: r => r.low_coverage ? 'low' : '' },
+  { key: 'duration_seconds', label: 'Duration', render: r => fmtDuration(r.duration_seconds) },
+  { key: 'min_timestamp_utc', label: 'Min at', render: r => aClock(r.min_timestamp_utc) },
+  { key: 'max_timestamp_utc', label: 'Max at', render: r => aClock(r.max_timestamp_utc) },
+  { key: 'sustained_5min_min', label: '5m min', render: r => aNum(r.sustained_5min_min) },
+  { key: 'sustained_5min_max', label: '5m max', render: r => aNum(r.sustained_5min_max) },
+  { key: 'time_weighted_mean', label: 'Time-wtd mean', render: r => aNum(r.time_weighted_mean) },
+  { key: 'disconnected_intervals', label: 'Disconnects', render: r => aInt(r.disconnected_intervals) },
+];
+
+function aSorted(rows, state) {
+  const factor = state.dir === 'asc' ? 1 : -1;
+  return rows.slice().sort((left, right) => {
+    const a = left[state.key];
+    const b = right[state.key];
+    if (a == null && b == null) return 0;
+    if (a == null) return 1;
+    if (b == null) return -1;
+    if (typeof a === 'number' && typeof b === 'number') return (a - b) * factor;
+    return String(a).localeCompare(String(b)) * factor;
+  });
+}
+
+function aRenderTable(tableId, columns, rows, state, tableKey) {
+  const table = $a(tableId);
+  const head = '<thead><tr>' + columns.map(column => {
+    const indicator = state.key === column.key ? (state.dir === 'asc' ? ' ▲' : ' ▼') : '';
+    return `<th class="sortable" data-key="${column.key}">${column.label}${indicator}</th>`;
+  }).join('') + '</tr></thead>';
+
+  if (!rows.length) {
+    table.innerHTML = head + `<tbody><tr><td class="empty" colspan="${columns.length}">No data for this range.</td></tr></tbody>`;
+    return;
+  }
+
+  const body = aSorted(rows, state).map(row => {
+    const clickable = tableKey === 'hourlySort' && row.hour_start_utc ? ' clickable' : '';
+    const cells = columns.map(column => {
+      const extra = typeof column.cls === 'function' ? column.cls(row) : (column.cls || '');
+      return `<td class="${extra}">${column.render(row)}</td>`;
+    }).join('');
+    return `<tr class="${clickable}" data-hour-start="${row.hour_start_utc || ''}" data-hour-end="${row.hour_end_utc || ''}" data-label="${row.label || ''}">${cells}</tr>`;
+  }).join('');
+  table.innerHTML = head + `<tbody>${body}</tbody>`;
+
+  table.querySelectorAll('th[data-key]').forEach(th => {
+    th.onclick = () => {
+      const key = th.dataset.key;
+      const current = A[tableKey];
+      A[tableKey] = {
+        key,
+        dir: current.key === key && current.dir === 'asc' ? 'desc' : 'asc',
+      };
+      aRenderTables();
+    };
+  });
+  table.querySelectorAll('tr.clickable').forEach(tr => {
+    tr.onclick = () => aLoadTrajectory(tr.dataset.hourStart, tr.dataset.hourEnd, tr.dataset.label);
+  });
+}
+
+function aRenderTables() {
+  const hourly = A.data ? (A.data.hourly || []) : [];
+  const daily = A.data ? (A.data.daily || []) : [];
+  aRenderTable('analytics-hourly', HOURLY_COLUMNS, hourly, A.hourlySort, 'hourlySort');
+  aRenderTable('analytics-daily', DAILY_COLUMNS, daily, A.dailySort, 'dailySort');
+  $a('analytics-hourly-note').textContent = hourly.length
+    ? `${hourly.length} hourly rows · click a row for its HR trajectory.`
+    : 'No hourly rows for this range.';
+}
+
+function aRenderSummary(data) {
+  const s = data.summary || {};
+  $a('analytics-summary').innerHTML = [
+    aCard('Samples', aInt(s.count), `recorded ${fmtDuration(s.duration_seconds)}`),
+    aCard('Mean HR', s.mean == null ? '—' : `${aNum(s.mean)} bpm`, 'arithmetic mean'),
+    aCard('Median HR', s.median == null ? '—' : `${aNum(s.median)} bpm`, '50th percentile'),
+    aCard('Minimum', aInt(s.min), 'lowest observation'),
+    aCard('Maximum', aInt(s.max), 'highest observation'),
+    aCard('SD', aNum(s.sd), 'sample SD'),
+    aCard('MAD', aNum(s.mad), 'median absolute deviation'),
+    aCard('IQR', aNum(s.iqr), 'P75 − P25'),
+    aCard('P05 / P95', `${aNum(s.p05)} / ${aNum(s.p95)}`, 'distribution tails'),
+    aCard('CV', s.cv == null ? '—' : `${aNum(s.cv)}%`, 'SD / mean × 100'),
+    aCard('Range', aInt(s.range), 'max − min'),
+    aCard('Coverage', aPct(s.coverage), 'monitored / period'),
+  ].join('');
+  $a('analytics-range-label').textContent = `${data.range.label} · ${fmtTime(data.range.start_utc)} → ${fmtTime(data.range.end_utc)}`;
+  const warnings = data.warnings || [];
+  $a('analytics-warnings').textContent = warnings.join(' · ');
+}
+
+function aRender(data) {
+  A.data = data;
+  aRenderSummary(data);
+  aRenderTables();
+}
+
+async function aRefresh() {
+  if (A.loading) return;
+  A.loading = true;
+  $a('analytics-refresh').disabled = true;
+  try {
+    const params = new URLSearchParams({ range: A.range });
+    if (A.range === 'custom') {
+      const start = istInputToDate($a('analytics-start').value);
+      const end = istInputToDate($a('analytics-end').value);
+      if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+        throw new Error('Select valid custom start and end times');
+      }
+      params.set('start', start.toISOString());
+      params.set('end', end.toISOString());
+    }
+    const data = await getJSON(`/api/analytics?${params.toString()}`);
+    aRender(data);
+  } catch (error) {
+    $a('analytics-warnings').textContent = `Analytics error: ${error.message}`;
+  } finally {
+    A.loading = false;
+    $a('analytics-refresh').disabled = false;
+  }
+}
+
+async function aLoadTrajectory(start, end, label) {
+  if (!start || !end) return;
+  $a('analytics-traj').hidden = false;
+  $a('analytics-traj-title').textContent = label || 'Hourly trajectory';
+  $a('analytics-traj-stats').textContent = 'Loading…';
+  try {
+    const params = new URLSearchParams({ start, end });
+    if (A.data && A.data.range && A.data.range.session_id != null) {
+      params.set('session_id', A.data.range.session_id);
+    }
+    const data = await getJSON(`/api/analytics/trajectory?${params.toString()}`);
+    aDrawTrajectory(data);
+  } catch (error) {
+    $a('analytics-traj-chart').innerHTML = '';
+    $a('analytics-traj-stats').textContent = `Trajectory error: ${error.message}`;
+  }
+}
+
+function aDrawTrajectory(data) {
+  const svg = $a('analytics-traj-chart');
+  const points = data.points || [];
+  if (!points.length) {
+    svg.innerHTML = '<text x="20" y="40" class="grid-text">No points in this interval.</text>';
+    $a('analytics-traj-stats').textContent = 'No points.';
+    return;
+  }
+  const width = 1000, height = 240, left = 46, right = 12, top = 12, bottom = 28;
+  const xMin = new Date(data.range.start_utc).getTime();
+  const xMax = new Date(data.range.end_utc).getTime();
+  const values = points.map(point => Number(point.heart_rate_bpm));
+  let yMin = Math.min(...values), yMax = Math.max(...values);
+  const pad = Math.max(4, (yMax - yMin) * 0.15);
+  yMin = Math.max(30, Math.floor(yMin - pad));
+  yMax = Math.min(220, Math.ceil(yMax + pad));
+  if (yMax <= yMin) yMax = yMin + 10;
+
+  const x = (time) => left + ((time - xMin) / Math.max(1, xMax - xMin)) * (width - left - right);
+  const y = (bpm) => top + ((yMax - Math.min(yMax, Math.max(yMin, bpm))) / (yMax - yMin)) * (height - top - bottom);
+
+  let content = '';
+  for (let i = 0; i <= 4; i++) {
+    const value = yMin + (yMax - yMin) * (i / 4);
+    const yy = y(value);
+    content += `<line class="grid-line" x1="${left}" y1="${yy}" x2="${width - right}" y2="${yy}"></line>`;
+    content += `<text class="grid-text" x="4" y="${yy + 4}">${Math.round(value)}</text>`;
+  }
+  for (let i = 0; i <= 4; i++) {
+    const time = xMin + (xMax - xMin) * (i / 4);
+    const xx = x(time);
+    content += `<line class="grid-line" x1="${xx}" y1="${top}" x2="${xx}" y2="${height - bottom}"></line>`;
+    content += `<text class="grid-text" x="${xx + 3}" y="${height - 8}">${aClock(new Date(time).toISOString())}</text>`;
+  }
+
+  const intervals = [];
+  for (let i = 1; i < points.length; i++) {
+    const a = new Date(points[i - 1].timestamp_utc).getTime();
+    const b = new Date(points[i].timestamp_utc).getTime();
+    if (b > a) intervals.push(b - a);
+  }
+  intervals.sort((a, b) => a - b);
+  const median = intervals.length ? intervals[Math.floor(intervals.length / 2)] : 1000;
+  const threshold = Math.max(3000, median * 3);
+
+  let previous = null;
+  let segment = '';
+  let line = '';
+  for (const point of points) {
+    const time = new Date(point.timestamp_utc).getTime();
+    if (previous !== null && time - previous > threshold) {
+      line += segment;
+      segment = '';
+    }
+    segment += `${segment ? 'L' : 'M'}${x(time).toFixed(1)} ${y(point.heart_rate_bpm).toFixed(1)} `;
+    previous = time;
+  }
+  line += segment;
+  content += `<path class="hr-line" d="${line}"></path>`;
+  const last = points[points.length - 1];
+  content += `<circle cx="${x(new Date(last.timestamp_utc).getTime())}" cy="${y(last.heart_rate_bpm)}" r="3.5" fill="#ff7a45"></circle>`;
+  svg.innerHTML = content;
+  const s = data.summary || {};
+  $a('analytics-traj-stats').textContent = `n=${aInt(s.count)} · mean ${aNum(s.mean)} bpm · min ${aInt(s.min)} · max ${aInt(s.max)} · SD ${aNum(s.sd)}`;
+}
+
+$a('analytics-range').addEventListener('change', () => {
+  A.range = $a('analytics-range').value;
+  $a('analytics-custom').hidden = A.range !== 'custom';
+  if (A.range !== 'custom') aRefresh();
+});
+$a('analytics-apply').onclick = () => aRefresh();
+$a('analytics-refresh').onclick = () => aRefresh();
+$a('analytics-traj-close').onclick = () => { $a('analytics-traj').hidden = true; };
+
+(function aInit() {
+  const now = new Date();
+  $a('analytics-start').value = toIstInput(new Date(now.getTime() - 24 * 3600 * 1000).toISOString());
+  $a('analytics-end').value = toIstInput(now.toISOString());
+  aRefresh();
+  setInterval(aRefresh, 30000);
+})();
 </script>
 </body>
 </html>

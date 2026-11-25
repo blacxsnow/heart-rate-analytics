@@ -100,3 +100,66 @@ def test_manual_battery_readings(tmp_path) -> None:
         assert readings[1]["note"] == "broadcast on, 2 h"
         assert client.post("/api/battery", json={"percent": 101}).status_code == 422
         assert client.post("/api/battery", json={"percent": -1}).status_code == 422
+
+
+def test_analytics_endpoints(tmp_path) -> None:
+    app = make_app(tmp_path)
+    with TestClient(app) as client:
+        response = client.get("/api/analytics", params={"range": "current_session"})
+        assert response.status_code == 200
+        assert response.json()["range"]["kind"] == "current_session"
+        assert response.json()["range"].get("session_id") is not None
+
+        response = client.get("/api/analytics", params={"range": "1h"})
+        assert response.status_code == 200
+        data = response.json()
+        assert data["summary"]["count"] == 5
+        assert data["summary"]["mean"] == 72.0
+        assert data["hourly"]
+        assert data["daily"]
+        assert data["daily"][0]["count"] == 5
+        assert any("Small sample" in warning for warning in data["warnings"])
+
+        start = iso_utc(time.time() - 10)
+        end = iso_utc(time.time() + 1)
+        response = client.get(
+            "/api/analytics",
+            params={"range": "custom", "start": start, "end": end},
+        )
+        assert response.status_code == 200
+        assert response.json()["summary"]["count"] == 5
+
+        response = client.get(
+            "/api/analytics/trajectory",
+            params={"start": start, "end": end},
+        )
+        assert response.status_code == 200
+        trajectory = response.json()
+        assert len(trajectory["points"]) == 5
+        assert trajectory["summary"]["count"] == 5
+
+        assert (
+            client.get("/api/analytics", params={"range": "not-a-range"}).status_code
+            == 400
+        )
+        assert (
+            client.get(
+                "/api/analytics", params={"range": "custom"}
+            ).status_code
+            == 400
+        )
+
+        response = client.get(
+            "/api/analytics",
+            params={
+                "range": "custom",
+                "start": "2020-01-01T00:00:00+00:00",
+                "end": "2020-01-02T00:00:00+00:00",
+            },
+        )
+        assert response.status_code == 200
+        empty = response.json()
+        assert empty["summary"]["count"] == 0
+        assert empty["summary"]["mean"] is None
+        assert any("No measurements" in warning for warning in empty["warnings"])
+

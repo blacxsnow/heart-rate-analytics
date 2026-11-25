@@ -16,6 +16,7 @@ import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, Response
@@ -24,6 +25,17 @@ from pydantic import BaseModel, Field
 from ..acquisition.control import apply_action
 from ..acquisition.spool import SpoolQueue
 from ..acquisition.state import read_state
+from ..analysis.descriptive import (
+    DEFAULT_TIMEZONE,
+    daily_table,
+    hourly_table,
+    load_events_frame,
+    load_measurement_frame,
+    load_session_row,
+    resolve_range,
+    summary_block,
+    trajectory_points,
+)
 from ..database import AcquisitionDB, iso_utc, parse_iso
 from ..paths import control_path as default_control_path
 from ..paths import db_path as default_db_path
@@ -213,6 +225,107 @@ def create_app(
                 }
             )
         return readings
+
+    @app.get("/api/analytics")
+    def analytics(
+        range_key: str = Query(default="current_session", alias="range"),
+        start: str | None = None,
+        end: str | None = None,
+        session_id: int | None = None,
+        include_empty: bool | None = None,
+        include_simulated: bool = False,
+        tz_name: str = Query(default=DEFAULT_TIMEZONE, alias="tz"),
+    ) -> dict[str, Any]:
+        """Read-only descriptive statistics for the selected range."""
+        try:
+            tz = ZoneInfo(tz_name)
+        except ZoneInfoNotFoundError as exc:
+            raise HTTPException(status_code=400, detail="unknown timezone") from exc
+
+        path = db().path
+        session = load_session_row(path, session_id=session_id)
+        try:
+            resolved = resolve_range(
+                range_key,
+                start=start,
+                end=end,
+                session=session,
+                tz=tz,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        query_session_id = session_id
+        if (
+            query_session_id is None
+            and resolved["kind"] == "current_session"
+            and session is not None
+        ):
+            query_session_id = int(session["session_id"])
+        if query_session_id is not None:
+            resolved["session_id"] = query_session_id
+
+        frame = load_measurement_frame(
+            path,
+            start=resolved["start_utc"],
+            end=resolved["end_utc"],
+            session_id=query_session_id,
+            include_simulated=include_simulated,
+            tz=tz,
+        )
+        events = load_events_frame(
+            path,
+            start=resolved["start_utc"],
+            end=resolved["end_utc"],
+            event_types=["disconnected"],
+            tz=tz,
+        )
+        summary = summary_block(frame, resolved)
+        if include_empty is None:
+            include_empty = resolved["duration_seconds"] <= 48 * 3600
+        return {
+            "range": resolved,
+            "summary": summary,
+            "hourly": hourly_table(
+                frame, resolved, tz=tz, include_empty=bool(include_empty)
+            ),
+            "daily": daily_table(frame, events, resolved, tz=tz),
+            "warnings": summary["warnings"],
+            "computed_at": iso_utc(),
+        }
+
+    @app.get("/api/analytics/trajectory")
+    def analytics_trajectory(
+        start: str,
+        end: str,
+        session_id: int | None = None,
+        include_simulated: bool = False,
+        tz_name: str = Query(default=DEFAULT_TIMEZONE, alias="tz"),
+    ) -> dict[str, Any]:
+        """Raw HR points for an hourly/day drill-down."""
+        try:
+            tz = ZoneInfo(tz_name)
+        except ZoneInfoNotFoundError as exc:
+            raise HTTPException(status_code=400, detail="unknown timezone") from exc
+        try:
+            resolved = resolve_range("custom", start=start, end=end, tz=tz)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        path = db().path
+        frame = load_measurement_frame(
+            path,
+            start=resolved["start_utc"],
+            end=resolved["end_utc"],
+            session_id=session_id,
+            include_simulated=include_simulated,
+            tz=tz,
+        )
+        return {
+            "range": resolved,
+            "summary": summary_block(frame, resolved),
+            "points": trajectory_points(frame),
+            "computed_at": iso_utc(),
+        }
 
     @app.post("/api/annotations", status_code=201)
     def create_annotation(payload: AnnotationIn) -> dict[str, Any]:

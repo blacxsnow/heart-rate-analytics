@@ -24,6 +24,7 @@ Start here.
 | `18_acquisition_quality_report.md` | Deployment and quality validation: tests, simulation metrics, crash recovery, empty real DB, pending reboot/BLE checks |
 | `19_endurance_test.md` | 10-minute fault-injection endurance test: adapter loss, pause/resume, SIGKILL, web restart, forced link drop, recovery metrics |
 | `20_battery_and_background_metrics.md` | BLE battery availability (none unauthenticated), manual battery log/drain rate, and the sleep/SpO₂ background-recording experiment |
+| `21_statistical_analytics.md` | Read-only analytics module: summary cards, hourly/daily tables, metric definitions, API, limitations |
 
 ## Current bottom line
 

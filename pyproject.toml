@@ -16,7 +16,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-api = ["fastapi>=0.110", "uvicorn>=0.29", "websockets>=12", "httpx>=0.27"]
+api = ["fastapi>=0.110", "uvicorn>=0.29", "websockets>=12", "httpx>=0.27", "pandas>=2.2"]
 analysis = ["pandas>=2.2", "numpy>=1.26", "matplotlib>=3.8"]
 mqtt = ["paho-mqtt>=2.1"]
 proprietary = ["cryptography>=42"]
