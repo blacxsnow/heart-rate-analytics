@@ -203,6 +203,36 @@ hypothesis.
   toggle-free 24×7 across restarts. Proprietary authenticated HR is required
   for that requirement.
 
+## N019 — OTA inspection: signed delta package obtained (CONFIRMED)
+
+- **Goal:** Stage 1 non-destructive OTA inspection (no install, no write).
+- **Method:** attached Frida to Huawei Health, hooked the live check path
+  (`mkl`/`mkp`/`kka`), then replayed the same JSON check offline with a
+  claimed previous version.
+- **Endpoint:** `POST https://update-dre.platform.hicloud.com/ring2/v2/
+  CheckEx.action?ruleAttr=true` (fallback `/Ring/v2/CheckEx.action`).
+- **Installed 4.2.0.230:** server `{"status":"1"}`, UI "Your version is up to
+  date". No update is offered.
+- **Claimed 4.2.0.226(C00M06):** server `status 0`, offers 4.2.0.230
+  (`versionID 924903`) and a package directory.
+- **Package:** `Kimi_DIFF_4.2.0.226(C00M06)-4.2.0.230(C00M07).bin.apk`,
+  8,600,225 bytes, SHA-256
+  `e027ff7af65b7a647675edc235504d72d5288f34c8668ed47ffe8e47b1da42f1`;
+  matches `filelist.xml`.
+- **Container:** custom layout v1, tag `Kimi`, build `2026.08.28 12:06:45`,
+  20 manifest entries, 384-byte authentication block at `0x11c1`, payload at
+  `0x1341`. All 20 component SHA-256 digests verified; blobs are complete
+  images, not binary patches.
+- **Images:** `kimi_am35_{recovery,secboot,application}.bin`, `xip_code.bin`,
+  UI assets, NFC and touch firmware. Application begins with an Ambiq Apollo3
+  vector table (`SP 0x100bf0f0`, reset `0x001de069`); a separate secure-boot
+  image is present.
+- **Interpretation:** container-level signature + per-file digests + secure
+  boot image. Forging a bootable image needs Huawei's key. Older claimed
+  versions return `status 1`; the service only exposes the immediate delta.
+- **Safety:** the package was never transferred to the band; no install, no
+  reboot, no case opening. Raw package and IDs stay local/gitignored.
+
 ---
 
 ## Open experiments (next)

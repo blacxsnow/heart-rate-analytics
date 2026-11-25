@@ -17,8 +17,10 @@ recovery path:
   in-line encryption.
 - The band is **glued/sealed**; the teardown shows no exposed debug header.
   SWD may exist on test pads but is not documented.
-- Huawei's OTA path is cloud-checked, hash-verified and device-verified. No
-  public Band 9 firmware package, signing key or recovery image was found.
+- Huawei's OTA path is cloud-checked, hash-verified and device-verified. A
+  signed Band 9 update container was obtained and inspected (Stage 1); it
+  carries a 384-byte authentication block, per-component SHA-256 digests and
+  a dedicated Ambiq secure-boot image.
 - Even a UI-only rewrite would have to be signed by Huawei's key and pass the
   boot chain.
 
@@ -88,23 +90,50 @@ state HYPOTHESIS until read.
 
 ## 4. OTA path (from Huawei Health 11.0.0.517)
 
-### 4.1 Version check
+### 4.1 Version check (captured 2026-11-25)
 
-`UpdateBase` uses:
+The live Huawei Health 11.0.0.517 code path is obfuscated (`mkl` / `mkp` /
+`kka`), not the `UpdateBase`/`eja` classes described by older decompiles. The
+captured check is an HTTPS POST of JSON to:
 
 ```
-https://query.hicloud.com/accessory/v2/checkEx.action
+https://update-dre.platform.hicloud.com/ring2/v2/CheckEx.action?ruleAttr=true
+https://update-dre.platform.hicloud.com/Ring/v2/CheckEx.action?ruleAttr=true  (fallback)
 ```
 
-It sends the device type/version/ID plus phone/account context and receives
-version metadata. The response is not a public download; it is an authenticated
-Huawei cloud service.
+Request shape (values redacted here):
+
+```json
+{
+  "components": [{
+    "PackageName": "com.huawei.KIM-B19.firmware",
+    "PackageVersionCode": "0",
+    "PackageVersionName": "<current firmware>",
+    "SearchType": "1"
+  }],
+  "rules": {
+    "DeviceName": "KIM-B19",
+    "FirmWare": "ro.build.display.id",
+    "deviceId": "<band serial>",
+    "extra_info": "{\"phdDeviceUdid\":\"<device UDID>\",\"appVersion\":\"<code>\"}",
+    "Language": "...", "OS": "Android ...",
+    "C_version": "ro.product.CustCVersion",
+    "D_version": "ro.product.CustDVersion",
+    "vendorcountry": "..."
+  }
+}
+```
+
+Response either says `{"status":"1"}` ("Your version is up to date") or
+`{"status":"0","components":[{name,version,versionID,createTime,url,size}]}`.
+The package directory is then fetched as `<url>full/filelist.xml`.
 
 ### 4.2 Package verification
 
-`HwVersionManager.isUpgradeFileValid()` verifies the downloaded file with
-**SHA-256** and/or **MD5** against server metadata. The device then validates
-the image through its secure boot/OTA chain.
+`filelist.xml` lists each file with **size, MD5 and SHA-256**. The app checks
+the downloaded file against those values, and the band validates the container
+and images through its OTA/secure-boot chain. The container itself also carries
+per-component SHA-256 digests (section 4.5).
 
 ### 4.3 Transfer
 
@@ -129,6 +158,89 @@ simple "write this file" command.
 - OTA transfer TLVs in a controlled check-only flow.
 
 **What we cannot do without keys:** produce a bootable custom image.
+
+### 4.5 Stage 1 result: package obtained and parsed (2026-11-25)
+
+No update is offered for the installed `4.2.0.230(C00M07)`; the UI reports
+"Your version is up to date" and the server answers `{"status":"1"}`.
+
+In our tests only the **immediate previous release** produced an offer. By
+replaying the same check with the claimed version set to `4.2.0.226(C00M06)`,
+the server returned:
+
+```
+status     0
+version    4.2.0.230(C00M07)
+versionID  924903
+createTime 2026-09-13T16:00:00+0000
+url        https://update.hicloud.com/download/data/pub_13/HWHOTA_hota_900_9/.../
+```
+
+That directory contains `changelog.xml` and:
+
+```
+Kimi_DIFF_4.2.0.226(C00M06)-4.2.0.230(C00M07).bin.apk
+size      8,600,225 bytes
+sha256    e027ff7af65b7a647675edc235504d72d5288f34c8668ed47ffe8e47b1da42f1
+```
+
+The file was downloaded and its SHA-256 matched `filelist.xml`. It was **not**
+sent to the band. Claimed versions older than `4.2.0.226` returned
+`status 1`, so no arbitrary full image is exposed by the service.
+
+Despite the `DIFF` name, the container stores **complete component images**
+(each SHA-256 matches its payload slice); it is consistent with a file-level
+delta, not a binary patch set. Format (version 1):
+
+| Offset | Field |
+|---|---|
+| `0x00` | u16 layout version (`1`) |
+| `0x02` | u16 header length (`0x88`) |
+| `0x04` | u32 signature offset (`0x11c1`) |
+| `0x08` | u32 unknown (`1`) |
+| `0x0c` | char[64] product tag (`Kimi`) |
+| `0x4c` | char[64] package version (`4.2.0.230(C00M07)`) |
+| `0x8c` | u16 tag 2, u16 length `0x20`, build date/time (`2026.08.28 12:06:45`) |
+| `0xb0` | u16 tag 5, u16 manifest length (`0x1090`) |
+| `0xb4` | 20 manifest entries, `0xd4` bytes each |
+| `0x11c1` | 384-byte high-entropy authentication block |
+| `0x1341` | payload: concatenated component images |
+
+Each manifest entry is `name[64]`, `reserved[60]`, `flags[6]`, `version[10]`,
+`u32 size`, `u32 crc32`, `sha256[32]`, `source_digest[32]`. The second digest is
+**not** the payload MD5; it is believed to identify the previous file version.
+
+Components in this delta:
+
+| Component | Size | Notes |
+|---|---:|---|
+| `kimi_am35_recovery.bin` | 178,352 | recovery image |
+| `kimi_am35_secboot.bin` | 4,736 | Ambiq secure-boot stage |
+| `kimi_am35_application.bin` | 1,816,698 | main application |
+| `xip_code.bin` | 4,268,038 | execute-in-place code |
+| `reserv7.bin` | 1,141,830 | reserved region |
+| `glyphs.bin` | 229,821 | UI glyphs (v27.0.122) |
+| `logo.bin`, `gui09.bin`, `gui10.bin`, watchfaces 3–5 | 15,716 / 72 ×5 | UI assets |
+| `nfc_sn110t_fw_v60.bin` | 204,518 | NFC firmware |
+| `tp_fw_kimi.bin` | 125,772 | touch-panel firmware |
+| `i18n.dat`, `open_source.zip`, `wechatpay_auth.bin` | 76,654 / 401,957 / 416 | data |
+| `cak.bin`, `source_crc.bin` | 40 / 68 | key/CRC metadata |
+
+All 20 components verified against their SHA-256. The application image starts
+with an Ambiq Apollo3 vector table (`SP = 0x100bf0f0`,
+`reset = 0x001de069`), confirming a Cortex-M image, and a separate secure-boot
+image is shipped. The 384-byte block at `0x11c1` is the size of an RSA-3072
+signature; its scheme and key were not resolved, but its presence plus the
+per-file digests is consistent with signed-container verification.
+
+Tooling (no device access, no secrets):
+
+- `scripts/frida_ota_hooks.js` — read-only observer for the live check.
+- `src/fitness_band/hota.py` — container parser/verifier.
+- `scripts/inspect_hota.py` — CLI (`--extract`, `--json`, SHA-256 checks).
+
+**Stage 1 stop point reached:** package captured, hashed, parsed and archived
+locally. No band write, no install, no case opening.
 
 ## 5. Debug interfaces
 
@@ -158,7 +270,7 @@ None are satisfied. Do not flash.
 
 ## 7. Staged inspection plan
 
-### Stage 1 — non-destructive (recommended)
+### Stage 1 — non-destructive (recommended) — **complete 2026-11-25**
 
 1. Reconnect the phone via ADB.
 2. Capture a Huawei Health firmware **check** (no install).
