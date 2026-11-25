@@ -44,6 +44,7 @@ class CollectorConfig:
     spool_drain_interval: float = 60.0
     poll_interval: float = 1.0
     visible_band_backoff_max: float = 15.0
+    adapter_reset_after: int = 3
 
 
 @dataclass
@@ -51,10 +52,19 @@ class ConnectionResult:
     reason: str
     duration: float
     packets: int
+    seconds_since_last_packet: float | None = None
 
 
 class BroadcastOffError(RuntimeError):
     """The band is visible, but HR Data Broadcast is not active."""
+
+
+class AdapterPoweredOffError(RuntimeError):
+    """The Bluetooth adapter exists but is powered off."""
+
+
+class AdapterUnavailableError(RuntimeError):
+    """No Bluetooth adapter / bluetoothd is reachable."""
 
 
 class BandHRCollector:
@@ -87,6 +97,8 @@ class BandHRCollector:
         self._disconnects = 0
         self._paused_event_logged = False
         self._session_status: str | None = None
+        self._discovery_stuck_count = 0
+        self._last_reset_seen = 0
 
     def stop(self) -> None:
         self._stop.set()
@@ -113,6 +125,13 @@ class BandHRCollector:
             return
         self.db.set_session_status(self._session_id, status)
         self._session_status = status
+
+    def _set_failure(self, code: str | None, detail: str | None = None) -> None:
+        self.state.update(
+            last_failure=code,
+            last_failure_detail=detail,
+            force=True,
+        )
 
     def _hr_broadcast_addresses(self) -> list[str]:
         """Known/cached addresses of the HR-broadcast endpoint."""
@@ -155,6 +174,93 @@ class BandHRCollector:
                 LOG.debug("could not record stale-link event", exc_info=True)
         return cleared
 
+    def _try_adapter_reset(self, reason: str) -> bool:
+        """Power-cycle BlueZ's adapter as a last-resort recovery."""
+        ok, detail = _reset_bluez_adapter()
+        event = "adapter_reset" if ok else "adapter_reset_skipped"
+        try:
+            self.db.add_event(
+                event,
+                session_id=self._session_id,
+                details={"reason": reason, "detail": detail},
+            )
+        except Exception:
+            LOG.debug("could not record adapter-reset event", exc_info=True)
+        if ok:
+            self._discovery_stuck_count = 0
+            self.state.update(
+                adapter_powered=None,
+                adapter_discovering=False,
+                last_failure="adapter_reset",
+                last_failure_detail=detail,
+                force=True,
+            )
+            LOG.warning("Bluetooth adapter power-cycled (%s)", reason)
+        else:
+            self.state.update(
+                last_failure="adapter_reset_skipped",
+                last_failure_detail=detail,
+                force=True,
+            )
+            LOG.warning("Bluetooth adapter reset skipped (%s): %s", reason, detail)
+        return ok
+
+    def _prepare_for_connect(self) -> None:
+        """Check adapter state and stop discovery before opening a link."""
+        info = _bluez_show()
+        if not info:
+            self.state.update(
+                adapter_available=False,
+                adapter_powered=None,
+                adapter_discovering=None,
+                last_failure="adapter_unavailable",
+                last_failure_detail="Bluetooth service or adapter unavailable",
+                force=True,
+            )
+            raise AdapterUnavailableError("Bluetooth service or adapter unavailable")
+
+        powered = info.get("powered", "").lower() == "yes"
+        discovering = info.get("discovering", "").lower() == "yes"
+        self.state.update(
+            adapter_available=True,
+            adapter_powered=powered,
+            adapter_discovering=discovering,
+            force=True,
+        )
+        if not powered:
+            self.state.update(
+                last_failure="adapter_powered_off",
+                last_failure_detail="Bluetooth adapter is powered off",
+                force=True,
+            )
+            raise AdapterPoweredOffError("Bluetooth adapter is powered off")
+
+        if not discovering:
+            self._discovery_stuck_count = 0
+            return
+        if _stop_bluez_discovery():
+            self._discovery_stuck_count = 0
+            self.state.update(adapter_discovering=False, force=True)
+            LOG.info("stopped BlueZ discovery before connecting")
+            return
+
+        self._discovery_stuck_count += 1
+        self.state.update(adapter_discovering=True, force=True)
+        try:
+            self.db.add_event(
+                "bluez_discovery_stuck",
+                session_id=self._session_id,
+                details={"attempts": self._discovery_stuck_count},
+            )
+        except Exception:
+            LOG.debug("could not record discovery-stuck event", exc_info=True)
+        LOG.warning(
+            "BlueZ discovery is still active after stop (attempt %d)",
+            self._discovery_stuck_count,
+        )
+        if self._discovery_stuck_count >= self.config.adapter_reset_after:
+            self._try_adapter_reset("stuck_discovery")
+
     def _set_connected(self, *, endpoint_name: str | None, endpoint_address: str) -> None:
         self.state.update(
             force=True,
@@ -163,7 +269,10 @@ class BandHRCollector:
             device_id=endpoint_address,
             device_name=endpoint_name,
             last_error=None,
+            last_failure=None,
+            last_failure_detail=None,
             adapter_available=True,
+            adapter_powered=True,
             next_retry_at=None,
             consecutive_failures=0,
         )
@@ -259,9 +368,18 @@ class BandHRCollector:
         endpoint = await self._find_endpoint()
         if endpoint is None:
             snapshot = self.state.snapshot()
-            if snapshot.get("band_visible") and snapshot.get("hr_broadcast_active") is False:
+            failure = snapshot.get("last_failure")
+            detail = snapshot.get("last_failure_detail") or ""
+            if failure == "adapter_powered_off":
+                raise AdapterPoweredOffError(detail or "Bluetooth adapter is powered off")
+            if failure == "adapter_unavailable":
+                raise AdapterUnavailableError(
+                    detail or "Bluetooth service or adapter unavailable"
+                )
+            if failure == "hr_broadcast_off":
                 raise BroadcastOffError(
-                    "Band is nearby but HR Data Broadcast is off; on the band open "
+                    detail
+                    or "Band is nearby but HR Data Broadcast is off; on the band open "
                     "Settings → HR Data Broadcasts and start it"
                 )
             raise RuntimeError("HR broadcast endpoint not found")
@@ -276,11 +394,14 @@ class BandHRCollector:
             )
 
         client = BleakClient(
-            endpoint.address,
+            getattr(endpoint, "device", None) or endpoint.address,
             timeout=self.config.connect_timeout,
             disconnected_callback=on_disconnect,
         )
         try:
+            # BlueZ can fail connection setup while discovery is still active
+            # (hci0 "LE Set Random Address failed: -16 / EBUSY"). Stop it first.
+            await asyncio.to_thread(self._prepare_for_connect)
             try:
                 await client.connect()
             except (BleakDeviceNotFoundError, BleakDBusError) as exc:
@@ -289,13 +410,17 @@ class BandHRCollector:
                     session_id=self._session_id,
                     details={"address": endpoint.address, "error": str(exc)},
                 )
-                if isinstance(exc, BleakDeviceNotFoundError) or "br-connection-canceled" in str(exc):
+                if isinstance(exc, BleakDeviceNotFoundError):
                     await asyncio.to_thread(_remove_bluez_cache, endpoint.address)
                     self.db.add_event(
                         "bluez_cache_removed",
                         session_id=self._session_id,
                         details={"address": endpoint.address},
                     )
+                elif "br-connection-canceled" in str(exc):
+                    # The peer/controller canceled the attempt; release any
+                    # stale local link but keep the cached device.
+                    await asyncio.to_thread(_disconnect_bluez_device, endpoint.address)
                 raise
             self.db.add_event(
                 "connected",
@@ -328,6 +453,9 @@ class BandHRCollector:
                 if control.force_reconnect != self._last_force_seen:
                     self._last_force_seen = control.force_reconnect
                     reason = "reconnect_requested"
+                    break
+                if control.reset_adapter != self._last_reset_seen:
+                    reason = "adapter_reset_requested"
                     break
                 if disconnected.is_set() or not client.is_connected:
                     reason = "disconnected"
@@ -377,8 +505,16 @@ class BandHRCollector:
             except Exception:  # cleanup must not mask the result
                 LOG.debug("post-disconnect cleanup failed", exc_info=True)
         duration = time.monotonic() - started
+        last_packet_age = None
+        if self._last_packet_monotonic is not None:
+            last_packet_age = round(
+                max(0.0, time.monotonic() - self._last_packet_monotonic), 3
+            )
         return ConnectionResult(
-            reason=reason, duration=duration, packets=self._session_packets - start_packets
+            reason=reason,
+            duration=duration,
+            packets=self._session_packets - start_packets,
+            seconds_since_last_packet=last_packet_age,
         )
 
     async def _find_endpoint(self):
@@ -394,13 +530,63 @@ class BandHRCollector:
         return endpoint
 
     async def _scan_endpoint(self):
+        info = await asyncio.to_thread(_bluez_show)
+        if not info:
+            self.state.update(
+                adapter_available=False,
+                adapter_powered=None,
+                adapter_discovering=None,
+                last_failure="adapter_unavailable",
+                last_failure_detail="Bluetooth service or adapter unavailable",
+                last_error="Bluetooth service or adapter unavailable",
+                force=True,
+            )
+            if time.time() - self._last_scan_event > 120:
+                self._last_scan_event = time.time()
+                self.db.add_event(
+                    "adapter_unavailable",
+                    session_id=self._session_id,
+                    details={"message": "bluetoothctl show returned no adapter"},
+                )
+            return None
+
+        powered = info.get("powered", "").lower() == "yes"
+        discovering = info.get("discovering", "").lower() == "yes"
+        self.state.update(
+            adapter_available=True,
+            adapter_powered=powered,
+            adapter_discovering=discovering,
+            force=True,
+        )
+        if not powered:
+            self.state.update(
+                last_failure="adapter_powered_off",
+                last_failure_detail="Bluetooth adapter is powered off",
+                last_error="Bluetooth adapter is powered off",
+                force=True,
+            )
+            if time.time() - self._last_scan_event > 120:
+                self._last_scan_event = time.time()
+                self.db.add_event(
+                    "adapter_powered_off",
+                    session_id=self._session_id,
+                    details={"message": "Bluetooth adapter is powered off"},
+                )
+            return None
+
         try:
             hr_endpoint, normal_endpoint = await find_endpoints(
                 timeout=self.config.scan_timeout,
                 address=self.config.address,
             )
         except BleakError as exc:
-            self.state.update(adapter_available=False, last_error=f"adapter: {exc}")
+            self.state.update(
+                adapter_available=False,
+                last_failure="adapter_unavailable",
+                last_failure_detail=f"{type(exc).__name__}: {exc}",
+                last_error=f"adapter: {exc}",
+                force=True,
+            )
             if time.time() - self._last_scan_event > 300:
                 self._last_scan_event = time.time()
                 self.db.add_event(
@@ -415,6 +601,8 @@ class BandHRCollector:
                 adapter_available=True,
                 band_visible=True,
                 hr_broadcast_active=True,
+                last_failure=None,
+                last_failure_detail=None,
             )
             return hr_endpoint
 
@@ -423,6 +611,18 @@ class BandHRCollector:
             band_visible=normal_endpoint is not None,
             hr_broadcast_active=False if normal_endpoint is not None else None,
         )
+        if normal_endpoint is not None:
+            self.state.update(
+                last_failure="hr_broadcast_off",
+                last_failure_detail=(
+                    "Band is nearby but HR Data Broadcast is off; start it on the band"
+                ),
+            )
+        else:
+            self.state.update(
+                last_failure="band_not_visible",
+                last_failure_detail="HR broadcast endpoint not advertising",
+            )
         if time.time() - self._last_scan_event > 120:
             self._last_scan_event = time.time()
             if normal_endpoint is not None:
@@ -446,7 +646,9 @@ class BandHRCollector:
     # --- lifecycle ---------------------------------------------------------
     async def run(self) -> None:
         config = self.config
-        self._last_force_seen = self._control().force_reconnect
+        initial_control = self._control()
+        self._last_force_seen = initial_control.force_reconnect
+        self._last_reset_seen = initial_control.reset_adapter
         self._session_started = time.time()
         self._session_id = self.db.start_session(
             device_id=self.state.snapshot().get("device_id") or "unknown",
@@ -474,6 +676,12 @@ class BandHRCollector:
                     self._last_force_seen = control.force_reconnect
                     self._failures = 0
                     self.state.update(consecutive_failures=0, next_retry_at=None)
+                if control.reset_adapter != self._last_reset_seen:
+                    self._last_reset_seen = control.reset_adapter
+                    self._failures = 0
+                    self.state.update(consecutive_failures=0, next_retry_at=None)
+                    await asyncio.to_thread(self._try_adapter_reset, "user_request")
+                    continue
                 if control.paused:
                     self.state.update(
                         connection_status="paused",
@@ -507,12 +715,15 @@ class BandHRCollector:
                 try:
                     result = await self._connect_and_stream()
                 except Exception as exc:
+                    code = _classify_exception(exc)
+                    detail = f"{type(exc).__name__}: {exc}"
                     self.db.add_event(
                         "error",
                         session_id=self._session_id,
-                        details={"error": f"{type(exc).__name__}: {exc}"},
+                        details={"error": detail, "failure": code},
                     )
-                    self.state.update(last_error=f"{type(exc).__name__}: {exc}")
+                    self._set_failure(code, detail)
+                    self.state.update(last_error=detail)
                     LOG.exception("connection attempt failed")
                     result = None
 
@@ -530,8 +741,23 @@ class BandHRCollector:
                     force=True,
                 )
                 if result is not None:
-                    if result.reason != "reconnect_requested":
+                    if result.reason not in ("reconnect_requested", "adapter_reset_requested"):
                         self._disconnects += 1
+                    if result.reason == "disconnected":
+                        self._set_failure(
+                            "link_dropped",
+                            "BLE link dropped by the band or controller"
+                            + (
+                                f" after {result.seconds_since_last_packet:.1f}s without a packet"
+                                if result.seconds_since_last_packet is not None
+                                else ""
+                            ),
+                        )
+                    elif result.reason == "stale_connection":
+                        self._set_failure(
+                            "no_packets",
+                            f"no HR packets for {config.stale_timeout:.0f}s",
+                        )
                     self._set_session_status("disconnected")
                     self.db.add_event(
                         "disconnected",
@@ -540,6 +766,7 @@ class BandHRCollector:
                             "reason": result.reason,
                             "duration_s": round(result.duration, 3),
                             "packets": result.packets,
+                            "seconds_since_last_packet": result.seconds_since_last_packet,
                         },
                     )
                     self.db.update_session_stats(
@@ -548,14 +775,18 @@ class BandHRCollector:
                         disconnect_count=self._disconnects,
                     )
                     LOG.info(
-                        "connection ended: reason=%s duration=%.1fs packets=%d",
+                        "connection ended: reason=%s duration=%.1fs packets=%d "
+                        "last_packet_age=%s",
                         result.reason,
                         result.duration,
                         result.packets,
+                        result.seconds_since_last_packet,
                     )
                     if result.duration >= config.stable_after:
                         self._failures = 0
                         self.state.update(consecutive_failures=0)
+                if result is not None and result.reason == "adapter_reset_requested":
+                    continue
                 if self._stop.is_set():
                     break
                 if self._last_control.paused:
@@ -573,6 +804,8 @@ class BandHRCollector:
                     break
                 if outcome == "retry":
                     LOG.info("retry requested; reconnecting immediately")
+                if outcome == "reset":
+                    LOG.info("adapter reset requested; handling immediately")
         finally:
             self.db.end_session(
                 self._session_id,
@@ -611,6 +844,8 @@ class BandHRCollector:
                 self._failures = 0
                 self.state.update(consecutive_failures=0, next_retry_at=None, force=True)
                 return "retry"
+            if control.reset_adapter != self._last_reset_seen:
+                return "reset"
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 return "timeout"
@@ -646,9 +881,11 @@ def _bluetoothctl(*args: str, timeout: float = 8.0) -> subprocess.CompletedProce
         return None
 
 
-def _bluez_devices() -> list[tuple[str, str]]:
+def _bluez_devices(*, connected_only: bool = False) -> list[tuple[str, str]]:
     """Return ``(address, name)`` for devices cached by BlueZ."""
-    result = _bluetoothctl("devices")
+    result = _bluetoothctl("devices", "Connected") if connected_only else _bluetoothctl(
+        "devices"
+    )
     if result is None:
         return []
     devices: list[tuple[str, str]] = []
@@ -657,6 +894,90 @@ def _bluez_devices() -> list[tuple[str, str]]:
         if len(parts) >= 2 and parts[0] == "Device":
             devices.append((parts[1], parts[2] if len(parts) > 2 else ""))
     return devices
+
+
+def _bluez_show() -> dict[str, str]:
+    """Parse ``bluetoothctl show`` into a lower-case property map."""
+    result = _bluetoothctl("show")
+    if result is None:
+        return {}
+    info: dict[str, str] = {}
+    for line in _ANSI_RE.sub("", result.stdout).splitlines():
+        if ":" not in line:
+            continue
+        key, value = line.split(":", 1)
+        info[key.strip().lower()] = value.strip()
+    return info
+
+
+def _bluez_powered() -> bool | None:
+    info = _bluez_show()
+    if not info:
+        return None
+    return info.get("powered", "").lower() == "yes"
+
+
+def _bluez_discovering() -> bool:
+    return _bluez_show().get("discovering", "").lower() == "yes"
+
+
+def _stop_bluez_discovery() -> bool:
+    """Stop an adapter-wide discovery session left on by another client."""
+    if not _bluez_discovering():
+        return True
+    _bluetoothctl("scan", "off")
+    if not _bluez_discovering():
+        return True
+    # BlueZ occasionally reports failure while discovery is still winding down.
+    _bluetoothctl("scan", "off")
+    return not _bluez_discovering()
+
+
+def _reset_bluez_adapter() -> tuple[bool, str]:
+    """Power-cycle the adapter, but never disrupt other connected devices."""
+    connected = _bluez_devices(connected_only=True)
+    others = [
+        name or address
+        for address, name in connected
+        if not name.lower().startswith(_HR_NAME_PREFIX)
+    ]
+    if others:
+        return False, f"other Bluetooth devices connected: {', '.join(others)}"
+    if _bluetoothctl("power", "off", timeout=15.0) is None:
+        return False, "power off failed"
+    time.sleep(1.0)
+    if _bluetoothctl("power", "on", timeout=15.0) is None:
+        return False, "power on failed"
+    time.sleep(1.0)
+    if not _bluez_powered():
+        return False, "adapter did not power back on"
+    return True, "adapter power-cycled"
+
+
+def _classify_exception(exc: BaseException) -> str:
+    """Map a connection/scan exception to a stable failure code."""
+    if isinstance(exc, BroadcastOffError):
+        return "hr_broadcast_off"
+    if isinstance(exc, AdapterPoweredOffError):
+        return "adapter_powered_off"
+    if isinstance(exc, AdapterUnavailableError):
+        return "adapter_unavailable"
+    if isinstance(exc, BleakDeviceNotFoundError):
+        return "connect_not_found"
+    if isinstance(exc, TimeoutError):
+        return "connect_timeout"
+    text = str(exc).lower()
+    if "inprogress" in text or "in progress" in text:
+        return "connect_in_progress"
+    if "br-connection-canceled" in text:
+        return "connect_canceled"
+    if "not powered" in text or "powered off" in text:
+        return "adapter_powered_off"
+    if "no bluetooth" in text or "adapter not found" in text or "not available" in text:
+        return "adapter_unavailable"
+    if "hr broadcast endpoint not found" in text:
+        return "band_not_visible"
+    return "connect_failed"
 
 
 def _bluez_connected(address: str) -> bool:

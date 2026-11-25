@@ -113,17 +113,55 @@ class FakeBLE:
         self.cached_hr = False
         self.stale_links: set[str] = set()
         self.bluez_disconnects: list[str] = []
+        self.adapter_present = True
+        self.adapter_powered = True
+        self.adapter_discovering = False
+        self.discovery_stuck = False
+        self.reset_calls: list[str] = []
         monkeypatch.setattr(collector_module, "find_endpoints", self._find_endpoints)
         monkeypatch.setattr(collector_module, "BleakClient", self._make_client)
         monkeypatch.setattr(collector_module, "_bluez_devices", self._bluez_devices)
         monkeypatch.setattr(collector_module, "_bluez_connected", self._bluez_connected)
+        monkeypatch.setattr(collector_module, "_bluez_show", self._bluez_show)
+        monkeypatch.setattr(
+            collector_module, "_stop_bluez_discovery", self._stop_bluez_discovery
+        )
+        monkeypatch.setattr(
+            collector_module, "_reset_bluez_adapter", self._reset_bluez_adapter
+        )
         monkeypatch.setattr(
             collector_module, "_disconnect_bluez_device", self._disconnect_bluez_device
         )
         monkeypatch.setattr(collector_module, "_remove_bluez_cache", lambda _address: None)
 
-    def _bluez_devices(self) -> list[tuple[str, str]]:
-        return [(ADDRESS, NAME)] if self.cached_hr else []
+    def _bluez_devices(self, *, connected_only: bool = False) -> list[tuple[str, str]]:
+        if not self.cached_hr:
+            return []
+        if connected_only and ADDRESS not in self.stale_links:
+            return []
+        return [(ADDRESS, NAME)]
+
+    def _bluez_show(self) -> dict[str, str]:
+        if not self.adapter_present:
+            return {}
+        return {
+            "powered": "yes" if self.adapter_powered else "no",
+            "discovering": "yes" if self.adapter_discovering else "no",
+        }
+
+    def _stop_bluez_discovery(self) -> bool:
+        if self.discovery_stuck:
+            return False
+        self.adapter_discovering = False
+        return True
+
+    def _reset_bluez_adapter(self) -> tuple[bool, str]:
+        self.reset_calls.append("reset")
+        self.adapter_present = True
+        self.adapter_powered = True
+        self.adapter_discovering = False
+        self.discovery_stuck = False
+        return True, "fake reset"
 
     def _bluez_connected(self, address: str) -> bool:
         return address in self.stale_links
@@ -228,6 +266,13 @@ def test_link_drop_reconnects_and_keeps_streaming(tmp_path, monkeypatch) -> None
                 lambda: "disconnected" in event_types(db), label="disconnect event"
             )
             assert disconnect_reasons(db) == ["disconnected"]
+            import json
+
+            details = [
+                json.loads(event["details"])
+                for event in db.events(event_types=["disconnected"])
+            ]
+            assert details[0]["seconds_since_last_packet"] is not None
         finally:
             await stop_collector(collector, task)
             assert db.sessions(limit=1)[0]["connection_status"] == "stopped"
@@ -501,5 +546,116 @@ def test_visible_band_uses_short_backoff(tmp_path, monkeypatch) -> None:
             db.close()
 
     asyncio.run(scenario())
+
+
+def test_adapter_powered_off_is_reported(tmp_path, monkeypatch) -> None:
+    fake = FakeBLE(monkeypatch)
+    fake.adapter_powered = False
+
+    async def scenario() -> None:
+        db, state, collector, _control = make_runtime(tmp_path, fast_config())
+        task = asyncio.create_task(collector.run())
+        try:
+            await wait_until(
+                lambda: state.snapshot()["last_failure"] == "adapter_powered_off",
+                label="powered-off failure",
+            )
+            snapshot = state.snapshot()
+            assert snapshot["adapter_powered"] is False
+            assert snapshot["adapter_available"] is True
+            assert fake.scan_times == []
+            assert "adapter_powered_off" in event_types(db)
+        finally:
+            await stop_collector(collector, task)
+            db.close()
+
+    asyncio.run(scenario())
+
+
+def test_adapter_unavailable_is_reported(tmp_path, monkeypatch) -> None:
+    fake = FakeBLE(monkeypatch)
+    fake.adapter_present = False
+
+    async def scenario() -> None:
+        db, state, collector, _control = make_runtime(tmp_path, fast_config())
+        task = asyncio.create_task(collector.run())
+        try:
+            await wait_until(
+                lambda: state.snapshot()["last_failure"] == "adapter_unavailable",
+                label="adapter-unavailable failure",
+            )
+            snapshot = state.snapshot()
+            assert snapshot["adapter_available"] is False
+            assert fake.scan_times == []
+            assert "adapter_unavailable" in event_types(db)
+        finally:
+            await stop_collector(collector, task)
+            db.close()
+
+    asyncio.run(scenario())
+
+
+def test_reset_adapter_control_action(tmp_path, monkeypatch) -> None:
+    fake = FakeBLE(monkeypatch)
+    fake.adapter_powered = False
+
+    async def scenario() -> None:
+        config = fast_config(backoff_initial=30.0, backoff_max=30.0)
+        db, state, collector, control = make_runtime(tmp_path, config)
+        task = asyncio.create_task(collector.run())
+        try:
+            await wait_until(
+                lambda: state.snapshot()["last_failure"] == "adapter_powered_off",
+                label="powered-off state",
+            )
+            apply_action(control, "reset_adapter")
+            await wait_until(lambda: bool(fake.reset_calls), label="adapter reset")
+            await wait_until(
+                lambda: "adapter_reset" in event_types(db),
+                label="adapter_reset event",
+            )
+            await wait_until(
+                lambda: state.snapshot()["connection_status"] == "connected",
+                label="connection after reset",
+            )
+        finally:
+            await stop_collector(collector, task)
+            db.close()
+
+    asyncio.run(scenario())
+
+
+def test_stuck_discovery_triggers_adapter_reset(tmp_path, monkeypatch) -> None:
+    fake = FakeBLE(monkeypatch)
+    fake.adapter_discovering = True
+    fake.discovery_stuck = True
+
+    async def scenario() -> None:
+        config = fast_config(adapter_reset_after=1)
+        db, _state, collector, _control = make_runtime(tmp_path, config)
+        task = asyncio.create_task(collector.run())
+        try:
+            await wait_until(
+                lambda: bool(fake.reset_calls), label="automatic adapter reset"
+            )
+            assert "bluez_discovery_stuck" in event_types(db)
+            assert "adapter_reset" in event_types(db)
+        finally:
+            await stop_collector(collector, task)
+            db.close()
+
+    asyncio.run(scenario())
+
+
+def test_exception_classification() -> None:
+    classify = collector_module._classify_exception
+    assert classify(collector_module.BroadcastOffError("x")) == "hr_broadcast_off"
+    assert classify(collector_module.AdapterPoweredOffError("x")) == "adapter_powered_off"
+    assert classify(collector_module.AdapterUnavailableError("x")) == "adapter_unavailable"
+    assert classify(TimeoutError()) == "connect_timeout"
+    assert classify(RuntimeError("org.bluez.Error.InProgress")) == "connect_in_progress"
+    assert classify(RuntimeError("br-connection-canceled")) == "connect_canceled"
+    assert classify(RuntimeError("HR broadcast endpoint not found")) == "band_not_visible"
+
 
 

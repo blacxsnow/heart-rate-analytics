@@ -130,6 +130,7 @@ DASHBOARD_HTML = r"""<!doctype html>
       <button data-action="disconnect">Disconnect</button>
       <button data-action="stop">Stop acquisition</button>
       <button data-action="reconnect">Reconnect now</button>
+      <button data-action="reset_adapter" class="danger">Reset Bluetooth adapter</button>
     </div>
   </section>
 
@@ -220,6 +221,8 @@ async function refreshStatus() {
     $('spool').textContent = `spool ${s.spool_pending || 0}`;
     const adapterBits = [];
     adapterBits.push(state.adapter_available === false ? 'adapter unavailable' : 'adapter ' + (state.adapter_available === true ? 'ok' : '—'));
+    if (state.adapter_powered === false) adapterBits.push('powered off');
+    if (state.adapter_discovering === true) adapterBits.push('discovery stuck');
     if (state.band_visible === true) adapterBits.push('band nearby');
     if (state.hr_broadcast_active === true) adapterBits.push('HR broadcast on');
     else if (state.hr_broadcast_active === false) adapterBits.push('HR broadcast OFF');
@@ -230,13 +233,28 @@ async function refreshStatus() {
       retry = ` Next retry in ${Math.ceil((state.next_retry_at * 1000 - Date.now()) / 1000)} s at ${fmtClockTime(state.next_retry_at * 1000)} IST.`;
     }
     let hint = '';
+    const failure = state.last_failure;
     if (state.connection_status === 'connected') {
       hint = '';
     } else if (state.paused) {
       hint = 'Acquisition is paused. Use Start/Connect to resume.';
-    } else if (state.hr_broadcast_active === false) {
+    } else if (failure === 'hr_broadcast_off') {
       hint = 'Band is nearby, but HR Data Broadcast is OFF. On the band: Settings → HR Data Broadcasts → start.' + retry;
-    } else if (state.band_visible === false) {
+    } else if (failure === 'adapter_powered_off') {
+      hint = 'Bluetooth adapter is powered OFF. Turn Bluetooth back on; reconnecting automatically.' + retry;
+    } else if (failure === 'adapter_unavailable') {
+      hint = 'Bluetooth service/adapter is unavailable. Check that Bluetooth is enabled and the adapter is present.' + retry;
+    } else if (failure === 'adapter_discovering' || failure === 'connect_in_progress') {
+      hint = 'Bluetooth controller is busy or stuck in discovery. Use “Reset Bluetooth adapter” if this persists.' + retry;
+    } else if (failure === 'adapter_reset' || failure === 'adapter_reset_skipped') {
+      hint = `Bluetooth adapter recovery: ${state.last_failure_detail || 'done'}.` + retry;
+    } else if (failure === 'connect_canceled' || failure === 'connect_timeout' || failure === 'connect_not_found') {
+      hint = 'Connect attempt failed at the controller/BlueZ level; retrying automatically.' + retry;
+    } else if (failure === 'link_dropped') {
+      hint = 'The band dropped the BLE link; reconnecting automatically.' + retry;
+    } else if (failure === 'no_packets') {
+      hint = 'The link stalled with no HR packets; reconnecting automatically.' + retry;
+    } else if (failure === 'band_not_visible') {
       hint = 'HR broadcast endpoint not found. If the band is on, start Settings → HR Data Broadcasts on the band.' + retry;
     } else if (state.last_error) {
       hint = `Not connected: ${state.last_error}` + retry;
@@ -404,7 +422,10 @@ document.querySelectorAll('[data-window]').forEach(btn => {
   };
 });
 document.querySelectorAll('[data-action]').forEach(btn => {
-  btn.onclick = () => control(btn.dataset.action);
+  btn.onclick = () => {
+    if (btn.dataset.action === 'reset_adapter' && !confirm('Power-cycle the Bluetooth adapter?\n\nOther Bluetooth devices will disconnect briefly. The daemon skips the reset if other devices are connected.')) return;
+    control(btn.dataset.action);
+  };
 });
 $('export').onclick = () => { window.location = '/api/export.csv'; };
 $('restart').onclick = () => control('restart');

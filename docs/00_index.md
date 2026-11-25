@@ -22,6 +22,7 @@ Start here.
 | `16_hichain3_streams.md` | Track B: auth flow, band-side HiChain3 evidence, measurement command map, remaining gaps, independent-auth options |
 | `17_acquisition_system.md` | 24×7 acquisition daemon, database contract, reliability, systemd deployment, dashboard, analysis, validation, HR-broadcast experiment |
 | `18_acquisition_quality_report.md` | Deployment and quality validation: tests, simulation metrics, crash recovery, empty real DB, pending reboot/BLE checks |
+| `19_endurance_test.md` | 10-minute fault-injection endurance test: adapter loss, pause/resume, SIGKILL, web restart, forced link drop, recovery metrics |
 
 ## Current bottom line
 

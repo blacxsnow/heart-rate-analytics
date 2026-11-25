@@ -223,7 +223,35 @@ When this is detected the daemon records `hr_broadcast_off`, sets
 There is no standard BLE command to start this mode from the host; it is a
 band-side setting. A restart/charge can leave the band on with broadcast off.
 
-### Dashboard “Disconnect” versus “Stop acquisition”
+### Failure handling matrix
+
+| Failure point | Detection | Handler |
+|---|---|---|
+| HR Data Broadcast turned off | normal `HUAWEI Band <model>-…` endpoint visible, no `HR-…` endpoint | `hr_broadcast_off` event, `BroadcastOffError`, dashboard instruction, retry capped at 15 s |
+| Band off / out of range | no Huawei advertisement | `band_not_visible`; exponential backoff; automatic reconnect when it reappears |
+| BLE link dropped while streaming | Bleak `disconnected_callback` | `link_dropped`, last-packet age recorded, immediate backoff/reconnect |
+| Link alive but no HR notifications | no packet for 15 s | watchdog → `stale_connection`, disconnect, reconnect |
+| Stale BlueZ link (`Connected: yes`) | `HUAWEI Band HR-*` cached and connected while daemon is not | disconnect before every scan; remove cache if refused; verify/release after every disconnect |
+| BlueZ stuck in discovery | `Discovering: yes` and `scan off` fails | stop discovery before connect; after 3 failures power-cycle the adapter if no other devices are connected |
+| Adapter powered off | `Powered: no` | no scan/connect storm; `adapter_powered_off`; resumes automatically when powered on |
+| Adapter removed / bluetoothd down | `bluetoothctl show` empty or Bleak error | `adapter_unavailable`; retries without crashing |
+| Connect canceled / `InProgress` / timeout | BlueZ/Bleak exception | classified failure code, backoff, no destructive cache removal |
+| Device not found after scan | `BleakDeviceNotFoundError` | remove stale cache entry, rescan |
+| Random address rotation | new advertisement address | connect using the scanned `BLEDevice` object, not a stale address |
+| Phone takes over the band | link drop | reconnect loop; keep the phone app away from the band |
+| Daemon crash / host reboot | systemd + open sessions | old session marked `interrupted`, new session starts |
+| Web/API down | separate process | acquisition continues untouched |
+| Database write failure | SQLite exception | observation goes to disk spool, drained later |
+| Pause / stop | control file | release link, no retries |
+| Manual reconnect | control counter | cancels backoff immediately |
+| Adapter reset button | control counter | power-cycle only when no other Bluetooth device is connected |
+
+The fundamental BLE limitation is that the band is the peripheral and can drop
+the link unilaterally. There is no application-level keepalive or acknowledgement;
+the host can only detect the drop, release stale local state, and reconnect
+while the HR endpoint is advertising.
+
+
 
 Both write `paused=true`; the daemon releases the BLE link and stops retrying.
 Use **Start acquisition** or **Connect** to resume. A normal BLE drop does not

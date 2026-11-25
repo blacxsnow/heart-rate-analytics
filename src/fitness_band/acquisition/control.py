@@ -18,6 +18,7 @@ from pathlib import Path
 class ControlState:
     paused: bool = False
     force_reconnect: int = 0
+    reset_adapter: int = 0
     updated_at: float = 0.0
 
 
@@ -30,6 +31,7 @@ def read_control(path: str | Path) -> ControlState:
     return ControlState(
         paused=bool(raw.get("paused", False)),
         force_reconnect=int(raw.get("force_reconnect", 0)),
+        reset_adapter=int(raw.get("reset_adapter", 0)),
         updated_at=float(raw.get("updated_at", 0.0)),
     )
 
@@ -63,6 +65,8 @@ def apply_action(path: str | Path, action: str) -> ControlState:
     elif action == "reconnect":
         state.paused = False
         state.force_reconnect += 1
+    elif action == "reset_adapter":
+        state.reset_adapter += 1
     else:
         raise ValueError(f"unknown control action: {action}")
     write_control(path, state)
