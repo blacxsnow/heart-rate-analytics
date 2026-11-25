@@ -472,6 +472,18 @@ sampling periods. Aggressive/configurable intervals are therefore **not
 available through Huawei Health's command surface** and are almost certainly
 firmware-controlled.
 
+### 9.8 Firmware-side confirmation (2026-11-25, static)
+
+The Band 9 XIP image contains the band-side HiChain3 implementation and the
+same JSON vocabulary observed from Huawei Health: `hichain_iso_exchange`,
+`hichain_iso_session_key`, `hichain_return_key`, `HichainThread`,
+`HksService*`, `authForm`, `peerAuthId`, `isoSalt`, `returnCodeMac`, and the
+group-key files `/user/deviceauth/hcgroup*.dat`. Long-term group material is
+stored on the device under HKS, not in the OTA package.
+
+See `15_firmware_static_analysis.md` §4 and `16_hichain3_streams.md` for the
+architecture and the remaining auth options.
+
 ## 10. Open questions
 
 

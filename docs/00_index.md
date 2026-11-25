@@ -18,6 +18,8 @@ Start here.
 | `12_huawei_health_architecture.md` | Static architecture of Huawei Health 11.0.0.517 (BLE stack, HiChain, command builders, storage, native libs) |
 | `13_capture_results.md` | Runtime reference capture: HiChain3, AES-GCM, confirmed commands, interval result |
 | `14_firmware_feasibility.md` | Deep firmware/hardware inspection: Apollo3 secure boot, OTA path, SWD, recovery, staged plan |
+| `15_firmware_static_analysis.md` | Track A: image map and load addresses, OpenHarmony architecture, BLE/HiChain3/HKS, PPG and storage, UI independence |
+| `16_hichain3_streams.md` | Track B: auth flow, band-side HiChain3 evidence, measurement command map, remaining gaps, independent-auth options |
 
 ## Current bottom line
 
@@ -34,6 +36,13 @@ Start here.
 - **24×7 caveat:** a normal restart requires exiting the HRS broadcast to reach
   Settings, so the mode is off before reboot; auto-resume was not tested.
   Proprietary HiChain3 authentication is the path to a persistent mode.
+- **Firmware architecture (static):** OpenHarmony-based wearable; `xip_code.bin`
+  loads at `0x06040000`; the band itself implements HiChain3 with HKS-backed
+  group keys in `/user/deviceauth`; PPG, sleep/OSA, RRI and health history are
+  file-backed services.
+- **Capability matrix:** `capabilities/matrix.yaml` (validated by
+  `fitness_band.capabilities`) separates confirmed, partial, hypothesis and
+  unknown streams.
 - **Not attempted:** firmware modification.
 
 ## Quick commands

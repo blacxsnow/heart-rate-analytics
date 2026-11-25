@@ -1,0 +1,169 @@
+schema_version: 1
+updated: "2026-11-25"
+device:
+  model: "Kimi-B19FB"
+  firmware: "4.2.0.230(C00M07)"
+  platform: "OpenHarmony wearable firmware (Ambiq Apollo3)"
+
+# Enum values
+#   realtime / historical: yes | no | partial | unknown
+#   verification: confirmed | partial | hypothesis | unknown
+#
+# Do not promote a row from hypothesis to partial/confirmed without a device
+# observation or a decoded capture. In particular, BPM availability does not
+# imply IBI/HRV or raw PPG availability.
+
+entries:
+  - id: hr_hqs
+    measurement: heart_rate
+    realtime: "yes"
+    historical: "no"
+    sampling_hz: 1.0
+    resolution_bits: 8
+    timestamp_precision: "~1 s (host receive time)"
+    access: "BLE GATT 0x180D / 0x2A37 notify"
+    dependencies: []
+    verification: "confirmed"
+    evidence:
+      - docs/02_ble_recon.md
+      - docs/13_capture_results.md
+      - captures/raw/hr_persistence_test.jsonl
+    notes: >-
+      Continuous while HR Data Broadcast is active. Survives screen-off and
+      host disconnect; does not auto-resume across a normal restart because
+      reaching Settings requires exiting the broadcast.
+
+  - id: hr_proprietary_live
+    measurement: heart_rate
+    realtime: "partial"
+    historical: "no"
+    sampling_hz: null
+    resolution_bits: null
+    timestamp_precision: null
+    access: "FE86 0x19/0x03 (data path reported for Band 10, not verified here)"
+    dependencies: [hichain3]
+    verification: "hypothesis"
+    evidence:
+      - docs/04_protocol_spec.md
+      - docs/13_capture_results.md
+    notes: >-
+      The 0x19/0x03 live-HR path and a 0x7F status/data TLV are reported for
+      Band 10. No Band 9 packet has been decoded yet; do not treat as working.
+
+  - id: hr_auto_setting
+    measurement: heart_rate
+    realtime: "no"
+    historical: "no"
+    sampling_hz: null
+    resolution_bits: null
+    timestamp_precision: null
+    access: "FE86 0x07/0x17 on/off"
+    dependencies: [hichain3]
+    verification: "confirmed"
+    evidence:
+      - docs/04_protocol_spec.md
+      - docs/13_capture_results.md
+    notes: >-
+      Pure on/off command (TLV 0x01 = 01/00). No interval parameter exists in
+      the app command surface; sampling is firmware-controlled.
+
+  - id: hr_history
+    measurement: heart_rate
+    realtime: "no"
+    historical: "partial"
+    sampling_hz: null
+    resolution_bits: null
+    timestamp_precision: unknown
+    access: "FE86 0x07/0x0A count, 0x07/0x0B minute records"
+    dependencies: [hichain3]
+    verification: "partial"
+    evidence:
+      - docs/04_protocol_spec.md
+      - docs/13_capture_results.md
+    notes: >-
+      Request/response commands are confirmed. The minute-record field layout
+      is only partially decoded; expect HR plus other per-minute metrics.
+
+  - id: spo2_auto_setting
+    measurement: spo2
+    realtime: "no"
+    historical: "no"
+    sampling_hz: null
+    resolution_bits: null
+    timestamp_precision: null
+    access: "FE86 0x07/0x24 on/off"
+    dependencies: [hichain3]
+    verification: "confirmed"
+    evidence:
+      - docs/04_protocol_spec.md
+      - docs/13_capture_results.md
+    notes: >-
+      Pure on/off command. No interval parameter is exposed by Huawei Health.
+
+  - id: spo2_on_demand
+    measurement: spo2
+    realtime: "unknown"
+    historical: "unknown"
+    sampling_hz: null
+    resolution_bits: null
+    timestamp_precision: null
+    access: "unknown (candidate: 0x19 measurement path or 0x07 1E/26 windows)"
+    dependencies: [hichain3]
+    verification: "unknown"
+    evidence:
+      - docs/04_protocol_spec.md
+    notes: >-
+      Huawei Health can start a spot SpO2 measurement, but the command has not
+      been decoded on this Band 9. 0x07/0x1E and 0x07/0x26 are candidate data
+      windows (LIKELY, unverified).
+
+  - id: spo2_history
+    measurement: spo2
+    realtime: "no"
+    historical: "unknown"
+    sampling_hz: null
+    resolution_bits: null
+    timestamp_precision: unknown
+    access: "unknown; device files spo2.bin, spo2_data_sleep.bin, osa_spo2_data.bin"
+    dependencies: [hichain3]
+    verification: "hypothesis"
+    evidence:
+      - docs/15_firmware_static_analysis.md
+      - docs/04_protocol_spec.md
+    notes: >-
+      Firmware stores SpO2 and sleep/OSA SpO2 data in files. No confirmed
+      protocol request for these files exists yet.
+
+  - id: ibi_hrv
+    measurement: ibi_hrv
+    realtime: "unknown"
+    historical: "unknown"
+    sampling_hz: null
+    resolution_bits: null
+    timestamp_precision: null
+    access: "unverified; 0x19/0x05 RRI is a Band 10 report only"
+    dependencies: [hichain3]
+    verification: "hypothesis"
+    evidence:
+      - docs/04_protocol_spec.md
+      - docs/15_firmware_static_analysis.md
+    notes: >-
+      Firmware has RRI/sleep-RRI model files, but no Band 9 RRI packet has been
+      captured. Ordinary BPM must not be used to infer IBI/HRV availability.
+
+  - id: raw_ppg
+    measurement: raw_ppg
+    realtime: "unknown"
+    historical: "unknown"
+    sampling_hz: null
+    resolution_bits: null
+    timestamp_precision: null
+    access: "unverified; no protocol path decoded"
+    dependencies: [hichain3]
+    verification: "unknown"
+    evidence:
+      - docs/15_firmware_static_analysis.md
+    notes: >-
+      Firmware references arrhythmia_ppg_localdata_new.bin and OSA SpO2 feature
+      files, so raw/feature PPG can be stored internally. This is not evidence
+      of an external raw-PPG stream. Do not infer raw PPG from BPM or SpO2.

@@ -234,6 +234,39 @@ hypothesis.
 - **Safety:** the package was never transferred to the band; no install, no
   reboot, no case opening. Raw package and IDs stay local/gitignored.
 
+## N020 — Firmware architecture and offline HiChain3 analysis
+
+- **Context:** the physical phone/band were in use, so no UI automation or BLE
+  interaction. Work moved offline to the OTA images and static app analysis.
+- **Image map (vector tables):** secboot at `0x0000D000`, recovery at
+  `0x0003A000`, application at `0x00100000`.
+- **XIP base solved:** `xip_code.bin` loads at `0x06040000` (96/120 sampled
+  string literals equal `base + offset`; all other aligned candidates scored 0).
+- **OS:** OpenHarmony version strings (`OpenHarmony 2.3 beta`,
+  `OpenHarmony-3.2.10.6`), OHOS APPWK/UI classes, task pools, watchdogs and a
+  parameter service. The application is a multi-task RTOS firmware.
+- **BLE:** GKI/Bluedroid-style stack markers (`gki_alloc_free_queue`,
+  `btl2cap://`, HCI/ACL/L2CAP) alongside the FE86 transport.
+- **Band-side HiChain3:** `hichain_iso_exchange/session_key/result/return_key`,
+  `HichainThread`, `HksService*`, `/user/deviceauth/hcgroup.dat`, and the same
+  JSON vocabulary (`authForm`, `peerAuthId`, `isoSalt`, `returnCodeMac`).
+  Long-term group keys are on-device (HKS), not in the OTA images.
+- **Acquisition:** `HWD PPG`, `HwdIrDataProcess`, wear detection, `Sleepass`,
+  OSA/SpO2, arrhythmia and RRI code; health data is file-backed
+  (`hrm_historydata.bin`, `spo2*.bin`, `osa_spo2_data.bin`,
+  `arrhythmia_ppg_localdata_new.bin`, `sleep_rri_*`).
+- **UI independence:** acquisition/algorithm/storage tasks are separate from
+  the UI subsystem, so headless acquisition is architecturally plausible; the
+  enable/policy layer still gates automatic HR/SpO₂.
+- **App side:** the base APK has `HiChainAuthManager` but not the runtime
+  device classes; device/BLE logic is dynamically loaded (plugin/HMS), so the
+  exact HiChain3 JSON implementation is not readable from the base APK alone.
+- **Negative result:** a Frida GCM-only capture caught app/analytics JSON but
+  zero GATT frames (app ANR’d before BLE). It is not protocol evidence.
+- **New offline artifacts:** `fitness_band.proprietary` (GCM envelope,
+  confirmed command builders), `fitness_band.capabilities` +
+  `capabilities/matrix.yaml`, tests. 44 tests pass.
+
 ---
 
 ## Open experiments (next)
