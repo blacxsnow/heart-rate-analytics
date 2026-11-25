@@ -196,8 +196,11 @@ DASHBOARD_HTML = r"""<!doctype html>
     .analytics .traj { margin-top:14px; }
     .analytics .traj svg { height:240px; }
     .analytics .charts {
-      display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr));
-      gap:12px; margin-bottom:8px;
+      display:grid; grid-template-columns:repeat(2,minmax(0,1fr));
+      gap:16px; margin-bottom:8px;
+    }
+    @media (max-width:760px) {
+      .analytics .charts { grid-template-columns:1fr; }
     }
     .analytics .chart-card {
       background:var(--panel); border:1px solid #263241; border-radius:10px;

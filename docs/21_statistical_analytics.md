@@ -208,8 +208,8 @@ panels. It adds:
   coverage, duration, min-at, max-at, sustained 5-minute min/max, time-weighted
   mean, disconnects; sortable.
 - Clicking an hourly row opens its raw HR trajectory, with gaps preserved.
-- Distribution: histogram, ECDF, box plot and hourly P05–P95 bands; bin width
-  selectable (2/5/10 bpm).
+- Distribution: histogram, ECDF, box plot and hourly P05–P95 bands in a 2×2
+  grid (single column on narrow screens); bin width selectable (2/5/10 bpm).
 - HR bands: editable interval list, duration/%/episodes/longest table and
   stacked daily bars.
 - Sleep: per-night table and sleep-onset-aligned trajectory from existing
