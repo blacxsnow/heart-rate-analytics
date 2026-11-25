@@ -44,6 +44,10 @@ Start here.
   32-byte per-session AES-GCM key, HR-history window/records (`0x07/0x0A/B`,
   `0x0C/D`), SpO₂ window queries (`0x1E/0x1F/0x26`, no data yet) and an
   `rrisqi_data.bin` request (no file). See `16_hichain3_streams.md`.
+- **SpO₂ negative result:** two band-side spot measurements (98–99%, 97%) were
+  not streamed to the phone; only a periodic `0x25/0x01` poll was seen. The
+  band’s `spo2.bin` file is retrievable via `0x2C`, but its records are older
+  PPG/OSA features, not the spot reading.
 - **Capability matrix:** `capabilities/matrix.yaml` (validated by
   `fitness_band.capabilities`) separates confirmed, partial, hypothesis and
   unknown streams.

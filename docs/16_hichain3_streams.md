@@ -141,8 +141,79 @@ The time fields in the `0x07` windows are Unix seconds (`0x6B07081C` =
 is only partially decoded. The status batch (`0x0D`) has the same idea but
 uses `0x83` records.
 
-SpO₂ windows returned **no records** in this session (`0x0000` statuses). The
-automatic SpO₂ setting was enabled, but no spot measurement was performed.
+### 1.7 RRI/SQI file transfer (CONFIRMED)
+
+After the band’s Heart-rate screen was used, the app requested
+`rrisqi_data.bin` and this time the band returned a file:
+
+```
+0x2C/0x01  request  "rrisqi_data.bin", window
+0x2C/0x01  reply    file size 0x00000072 (114 bytes)
+0x2C/0x03  request  file metadata
+0x2C/0x03  reply    file id 0x10, metadata
+0x2C/0x04  request  read offset 0, length 0x72
+0x2C/0x05  reply    120 bytes (file payload)
+0x2C/0x06  request  close
+0x2C/0x06  reply    success
+```
+
+The 114-byte payload is preserved locally. Its float-like fields are **not**
+yet mapped to documented HRV metrics, so the values must not be published or
+interpreted as SDNN/RMSSD/etc. The important result is that **RRI/SQI data is
+retrievable through `0x2C`** once the band has produced it.
+
+### 1.8 SpO₂ spot measurement — negative result
+
+A spot SpO₂ measurement was performed on the band and displayed **98–99%**
+(user-confirmed). The phone-side sync still returned **no records** for
+`0x07/0x1E`, `0x07/0x1F` and `0x07/0x26` (all zero statuses).
+
+During the measurement window, service `0x25` exchanged
+`0x25/0x03 -> 01 01 64` (`100`). Because the band displayed 98–99%, this value
+is **not** the SpO₂ reading and must not be mapped to SpO₂.
+
+A second measurement was then captured live with the value **97%** (and HR
+**85 bpm**). The phone transmitted only a periodic `0x25/0x01` poll; there was
+**no** `0x25/0x03` value and no live SpO₂ packet. Conclusion: the spot SpO₂
+result is **not streamed to the phone**; it is stored on the band.
+
+### 1.9 Band file retrieval (`0x2C`)
+
+Using the already-authenticated GATT session, a `0x2C/0x01` request for
+`spo2.bin` returned a real file:
+
+```
+file id   0x10
+size      0x000021F6 = 8,694 bytes
+```
+
+The file was read in 960-byte chunks with `0x2C/0x04` and assembled from
+`0x2C/0x05` replies. Chunk format:
+
+```
+byte 0      file id
+bytes 1-4   offset (big-endian)
+byte 5      flag/reserved
+bytes 6..   data
+```
+
+The complete 8,694-byte file was recovered (local only). Its records carry
+timestamps from **17–18 Nov 2026**, not the 25 Nov spot measurement, and its
+float fields look like PPG/OSA features rather than a simple SpO₂ percentage.
+Requests for `spo2_data_sleep.bin`, `osa_spo2_data.bin`,
+`heartrate_data_sleep.bin` and `hrm_historydata.bin` all returned the same
+file id/size when sent with selector `0x02 = 0x10`, so the filename is not the
+selector; the numeric file id is.
+
+The spot SpO₂ value 97% is therefore still **not located** in a decoded
+protocol payload. It may be in a different file id or an on-device database
+that the app has not requested in our captures.
+
+**Method note:** injecting a second Frida script that hooked
+`onCharacteristicChanged` crashed `:PhoneService` (JNI error). Write-only
+injection into the existing `BluetoothGatt` is stable; use
+`scripts/frida_write_fe86.js` and let the separate capture observer log the
+notifications.
 
 ## 2. Band-side confirmation
 
@@ -208,9 +279,11 @@ why a crypto-only observer is ambiguous without GATT correlation.
 | HR history count/data | `0x07/0x0A` / `0x07/0x0B` | **CONFIRMED** request/response + envelope; inner fields partial |
 | Status history | `0x07/0x0C` / `0x07/0x0D` | **CONFIRMED** request/response + envelope |
 | Live proprietary HR | `0x19/0x03` + `0x7F` TLV | **HYPOTHESIS** (Band 10 report; not decoded on Band 9) |
-| SpO₂ spot measurement | unknown | **UNKNOWN**; no phone-side trigger observed |
-| SpO₂ history/window | `0x07/0x1E`, `0x07/0x1F`, `0x07/0x26` | **PARTIAL**: window queries confirmed, no records returned |
-| IBI / RRI / HRV | `0x2C/0x01` `rrisqi_data.bin`; `0x19/0x05` | **PARTIAL**: file request confirmed (no file); HRV tab exists in app; no RRI packets decoded |
+| SpO₂ spot measurement | unknown | **PARTIAL**: band displayed 97% (and 98–99% earlier, user-confirmed); no protocol value captured |
+| SpO₂ history/window | `0x07/0x1E`, `0x07/0x1F`, `0x07/0x26` | **PARTIAL**: queries confirmed; no records returned after either spot measurement |
+| `spo2.bin` file | `0x2C/0x01/04/05` | **PARTIAL**: 8,694-byte file retrieved; records dated 17–18 Nov, not the spot reading |
+| `0x25/0x03` | `01 01 64` | **UNKNOWN**; value 100 is *not* SpO₂ (band showed 97% / 98–99%) |
+| IBI / RRI / HRV | `0x2C/0x01` `rrisqi_data.bin`; `0x19/0x05` | **PARTIAL**: 114-byte RRI/SQI file retrieved; HRV tab exists; fields not mapped |
 | Raw PPG | unknown | **UNKNOWN**; device stores arrhythmia/OSA PPG files, no external path decoded |
 | Sleep/RRI files | `0x2C/0x01` file request | **CONFIRMED** request shape; no new file returned in the capture |
 

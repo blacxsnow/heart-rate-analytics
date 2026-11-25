@@ -295,6 +295,29 @@ hypothesis.
   decrypted JSONL), `fitness_band.history` (partial 0x0B/0x0D envelope
   parser), synthetic tests. 49 tests pass.
 
+## N022 — SpO₂ repeat measurement and file retrieval
+
+- **Repeat spot SpO₂:** band displayed **97%**, HR **85 bpm**, with a live
+  capture attached to `:PhoneService`. The phone sent only a periodic
+  `0x25/0x01` poll; there was **no** live SpO₂ value and no `0x25/0x03`.
+- **Conclusion:** spot SpO₂ is stored on the band, not streamed to the phone.
+  `0x25/0x03 = 0x64` observed earlier is therefore not SpO₂.
+- **File retrieval:** injected `0x2C/0x01` for `spo2.bin`; band returned file id
+  `0x10`, size `8,694`. Read it in 960-byte chunks via `0x2C/0x04`; assembled
+  all 8,694 bytes locally.
+- **File content:** timestamps are 17–18 Nov 2026 and the fields look like
+  PPG/OSA features, not the 25 Nov spot readings.
+- **Selector:** `spo2_data_sleep.bin`, `osa_spo2_data.bin`,
+  `heartrate_data_sleep.bin` and `hrm_historydata.bin` all returned the same
+  id/size with selector `0x02 = 0x10`; the numeric file id is the selector,
+  not the filename.
+- **Crash lesson:** a second Frida script that hooked
+  `onCharacteristicChanged` crashed `:PhoneService` (JNI error). Write-only
+  injection is stable; use `scripts/frida_write_fe86.js` plus the separate
+  capture observer.
+- **Status:** SpO₂ protocol value still unlocated; HR history and RRI file
+  retrieval are confirmed.
+
 ---
 
 ## Open experiments (next)

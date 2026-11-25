@@ -109,15 +109,15 @@ entries:
     sampling_hz: null
     resolution_bits: null
     timestamp_precision: null
-    access: "unknown (candidate: 0x19 measurement path or 0x07 1E/26 windows)"
+    access: "unknown; band-side measurement confirmed, no live phone packet"
     dependencies: [hichain3]
-    verification: "unknown"
+    verification: "partial"
     evidence:
-      - docs/04_protocol_spec.md
+      - docs/16_hichain3_streams.md
     notes: >-
-      Huawei Health can start a spot SpO2 measurement, but the command has not
-      been decoded on this Band 9. 0x07/0x1E and 0x07/0x26 are candidate data
-      windows (LIKELY, unverified).
+      Two band-side spot measurements displayed 98-99% and 97%, but the phone
+      saw no SpO2 value (only a periodic 0x25/0x01 poll). The result is stored
+      on the band; 0x25/0x03=100 is not SpO2.
 
   - id: spo2_history
     measurement: spo2
@@ -126,16 +126,16 @@ entries:
     sampling_hz: null
     resolution_bits: null
     timestamp_precision: unknown
-    access: "0x07/0x1E, 0x07/0x1F, 0x07/0x26 window queries; files spo2*.bin"
+    access: "0x2C file read spo2.bin (8,694 bytes); 0x07 window queries empty"
     dependencies: [hichain3]
     verification: "partial"
     evidence:
       - docs/16_hichain3_streams.md
       - docs/15_firmware_static_analysis.md
     notes: >-
-      Window queries were confirmed in the live capture but returned no records
-      in that session. Inner record layout is not decoded. No spot measurement
-      was triggered from the phone.
+      spo2.bin was retrieved in 960-byte chunks. Its records are dated 17-18
+      Nov 2026 and look like PPG/OSA features, not the 25 Nov spot readings.
+      The 0x07 windows returned no records after either measurement.
 
   - id: ibi_hrv
     measurement: ibi_hrv
@@ -144,15 +144,15 @@ entries:
     sampling_hz: null
     resolution_bits: null
     timestamp_precision: null
-    access: "0x2C/0x01 rrisqi_data.bin (no file returned); HRV tab in app"
+    access: "0x2C/0x01 rrisqi_data.bin (114 bytes retrieved); HRV tab in app"
     dependencies: [hichain3]
     verification: "partial"
     evidence:
       - docs/16_hichain3_streams.md
       - docs/15_firmware_static_analysis.md
     notes: >-
-      The app exposes an HRV tab and requests rrisqi_data.bin; the band
-      returned 0x00023281 (no new file) and no RRI packet was decoded. Ordinary
+      A 114-byte rrisqi_data.bin was retrieved through 0x2C; its float fields
+      are not yet mapped to SDNN/RMSSD. The HRV tab exists in the app. Ordinary
       BPM must not be used to infer IBI/HRV availability.
 
   - id: raw_ppg
