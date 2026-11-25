@@ -12,10 +12,12 @@
 
 | Identifier | Value | Source | Confidence |
 |---|---|---|---|
-| Model code | `KIM-B19` | Huawei Health 11.0.0.517 `assets/product_map.json` | **CONFIRMED** |
-| Marketing name | HUAWEI Band 9 | same file (`marketingName`) | **CONFIRMED** |
-| Product UUID | `24572deb-6b22-4a10-ab5d-4aa3c20c87d1` | same file | **CONFIRMED** |
-| Device type id | 747–750, 761, 811 (regional/variant entries) | same file | **CONFIRMED** |
+| Model family | `KIM-B19` | Huawei Health 11.0.0.517 `assets/product_map.json` | **CONFIRMED** |
+| Device type string | `Kimi-B19FB` | proprietary device-info response (`0x27/0x01`), captured 2026-11-25 | **CONFIRMED** |
+| Firmware | `4.2.0.230(C00M07)` | same proprietary device-info response | **CONFIRMED** |
+| Marketing name | HUAWEI Band 9 | product_map.json (`marketingName`) | **CONFIRMED** |
+| Product UUID | `24572deb-6b22-4a10-ab5d-4aa3c20c87d1` | product_map.json | **CONFIRMED** |
+| Device type id | 747–750, 761, 811 (regional/variant entries) | product_map.json | **CONFIRMED** |
 | Body sensor location | `0x02` = wrist | GATT `0x2A38` | **CONFIRMED** |
 | Standard HRS present in broadcast mode | yes | GATT + live stream | **CONFIRMED** |
 | Normal endpoint advertising service | `0x3802` | BLE scan | **CONFIRMED** |
@@ -23,14 +25,18 @@
 
 The `product_map.json` entries include several `KIM-B19` variants
 (`M0DF`, `M0DG`, `M0DH`, `M0DI`, `M0DS`, `M0EG`), plus `KIM-B19B` for a
-different marketing name (`HUAWEI Band HA590`). The physical unit's exact
-regional suffix is not yet recorded.
+different marketing name (`HUAWEI Band HA590`). The unit reports
+`Kimi-B19FB` in the proprietary device-info payload; the exact regional
+suffix remains a device-specific detail and is not published here.
 
-## 2. What is not confirmed
+## 2. Firmware and DIS caveat
 
-**The real firmware version is currently unknown.**
+The real firmware is **`4.2.0.230(C00M07)`**, read from the authenticated
+proprietary device-info response. This is newer than the `3.1.0.31` firmware
+mentioned in Gadgetbridge issue #3784 and is consistent with the observed
+**HiChain3** auth family.
 
-The standard Device Information Service returns placeholders:
+The standard Device Information Service still returns placeholders:
 
 ```
 Manufacturer      HUAWEI
@@ -41,10 +47,11 @@ Hardware Revision 1.0.0.1
 Software Revision 1.0.0.1
 ```
 
-This is not credible as a firmware identifier. The normal endpoint returned GATT
+These are not credible identifiers. The normal endpoint returned GATT
 `Unlikely Error` on a DIS read. The real values are exposed by the proprietary
 product-information command after authentication (Gadgetbridge
-`GetProductInformationRequest`, service/command in `DeviceConfig`).
+`GetProductInformationRequest`; the captured device-info payload used
+`0x27/0x01`).
 
 ### Why firmware matters
 
@@ -52,11 +59,12 @@ Gadgetbridge issue #3784 reports that a Band 9 updated to firmware
 `3.1.0.31` (after pairing with Huawei Health) failed to authenticate with
 Gadgetbridge, while an older firmware worked. The issue contains a workaround
 that changes the pairing path; the workaround helped Band 9/Band 7 but broke
-Band 8/GT4 in one iteration. This means:
+Band 8/GT4 in one iteration. This unit is on `4.2.0.230(C00M07)` and uses
+HiChain3, so results from the older firmware cannot be assumed to apply.
 
 - Firmware version affects the **auth path**, not the HRS path.
-- We must record the version before drawing conclusions about pairing.
-- We must not assume a Gadgetbridge fix for one firmware applies to another.
+- The firmware is now recorded, so future comparisons are possible.
+- Do not assume a Gadgetbridge fix for one firmware applies to another.
 
 ## 3. How to obtain the real identifiers
 

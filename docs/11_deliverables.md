@@ -16,11 +16,12 @@ Mapping of the original requested deliverables to concrete artifacts.
 | Integration test on hardware | `band9 hr` live captures | done for HRS |
 | Protocol specification with confidence | `docs/04_protocol_spec.md` | living document |
 | Lab notebook | `docs/10_lab_notebook.md` | living document |
-| Android communication architecture report | `docs/12_huawei_health_architecture.md` | static done; runtime pending |
-| BLE/HCI packet captures | `captures/android/*.btsnoop` (local) | tooling ready; pairing pending |
-| Relevant classes/methods | `docs/07_android_reference_plan.md` §1, §5–6 | initial list done |
-| Historical data format spec | pending P4 | not started |
-| Measurement comparison | pending P3/P4 | not started |
+| Android communication architecture report | `docs/12_huawei_health_architecture.md` | static + runtime done |
+| BLE/HCI packet captures | `captures/android/*.btsnoop` (local) + Frida logs | pairing/reconnect captured |
+| Relevant classes/methods | `docs/07_android_reference_plan.md` §1, §5–6 | initial list + runtime results |
+| Protocol command/response spec | `docs/04_protocol_spec.md` §9, `docs/13_capture_results.md` | confirmed on device |
+| Historical data format spec | `0x07/0x0B`, `0x07/0x0D`, `0x2C/0x01` captured | partial; record decoding pending |
+| Measurement comparison | HRS live vs band; SpO₂ toggle | HRS done; SpO₂ data pending |
 | Firmware feasibility | `docs/08_firmware_investigation.md` | desk review done; no hardware work |
 
 ## Reproducible environment

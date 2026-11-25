@@ -40,6 +40,29 @@ Static command evidence is summarised in `04_protocol_spec.md` §6.2. The key
 negative result: the continuous-HR and SpO₂ commands have **no interval
 parameter**; they are one-byte on/off toggles.
 
+## 1.1 Runtime capture result (2026-11-25)
+
+The reference environment produced a complete, decrypted session:
+
+- LinkParams: **authVersion 1, deviceSupportType 4 = HiChain3**.
+- Security negotiation: auth mode 4, Android ID, phone model.
+- HiChain3 JSON exchange captured (`isoSalt`, `token`, `peerAuthId`,
+  `returnCodeMac`, success `0x000186A0`).
+- FE86 TLV encryption: **AES-GCM**, `0x7C` flag + `0x7D` 16-byte IV +
+  `0x7E` ciphertext+tag.
+- Command plaintext recovered by matching each ciphertext to the app's
+  `Cipher.doFinal` event.
+- Confirmed commands include automatic HR (`0x07/0x17`), automatic SpO₂
+  (`0x07/0x24`), HR/SpO₂ alerts (`0x1D`, `0x22`, `0x25`), fitness history
+  (`0x03`, `0x0A`/`0x0B`, `0x0C`/`0x0D`), sleep/RRI file requests (`0x2C/0x01`),
+  file transfer (`0x0F/*`), device version/capability (`0x27/*`), P2P registry
+  (`0x34/0x01`) and dictionary sync (`0x37/*`).
+
+The remaining independent-implementation gap is HiChain3 itself: the long-term
+key is account-bound, and a factory reset is the clean way to bind a new one.
+That decision requires explicit user consent because it erases on-device data.
+
+
 ## 2. Capture policy
 
 - One experiment = one action in Huawei Health.

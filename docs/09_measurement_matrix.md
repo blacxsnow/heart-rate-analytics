@@ -75,22 +75,28 @@ the device.
 | Metric | Known control | Interval |
 |---|---|---|
 | HRS HR | none (standard) | ~1 Hz fixed |
-| Automatic HR | on/off `0x07/0x17` | firmware-controlled |
-| Continuous HR | on/off `0x07/0x1C` | firmware-controlled |
-| Automatic SpO₂ | on/off `0x07/0x24` | firmware-controlled |
+| Automatic / continuous HR | `0x07/0x17` on/off | firmware-controlled |
+| Automatic SpO₂ | `0x07/0x24` on/off | firmware-controlled |
 | Live HR/RRI | `0x19/0x01` (Band 10 evidence) | rate unknown |
 | Workout HR | workout start | rate unknown |
 
-Huawei Health 11.0.0.517's command builders were inspected directly. The
-continuous-HR and automatic-SpO₂ commands carry a single enable/status byte.
-No seconds/minutes interval TLV is present. The app's Smart/Real-time choice
-selects a mode, not a numeric cadence.
+Huawei Health 11.0.0.517's command builders were inspected directly, and the
+settings were then exercised on the physical Band 9:
 
-**No public implementation, and not Huawei Health itself, exposes a configurable
-HR/SpO₂ sampling interval.** Any claim of "aggressive intervals" must wait for a
-captured command that actually carries an interval parameter. The likely reality
-is that cadence is decided by the band firmware to balance battery and signal
-quality.
+```
+automatic HR off:   0x07/0x17  -> 01 01 00
+automatic HR on:    0x07/0x17  -> 01 01 01
+automatic SpO2 off: 0x07/0x24  -> 01 01 00
+automatic SpO2 on:  0x07/0x24  -> 01 01 01
+```
+
+There is **no interval field** in either command. The only numeric fields in
+the nearby settings are alert thresholds (`0x1D`, `0x22`, `0x25`). The app's
+Smart/Real-time choice selects a mode, not a numeric cadence.
+
+**Confirmed on hardware:** aggressive/configurable HR/SpO₂ sampling intervals
+are not exposed by Huawei Health and are almost certainly firmware-controlled.
+Any claim otherwise needs a captured command carrying an interval parameter.
 
 ## 7. 24×7 implications
 

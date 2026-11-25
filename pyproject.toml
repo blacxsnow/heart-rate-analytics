@@ -18,7 +18,8 @@ dependencies = [
 [project.optional-dependencies]
 api = ["fastapi>=0.110", "uvicorn>=0.29", "websockets>=12"]
 mqtt = ["paho-mqtt>=2.1"]
-dev = ["pytest>=8", "pytest-asyncio>=0.23", "ruff>=0.5"]
+proprietary = ["cryptography>=42"]
+dev = ["pytest>=8", "pytest-asyncio>=0.23", "ruff>=0.5", "cryptography>=42"]
 
 [project.scripts]
 band9 = "fitness_band.main:main"

@@ -334,7 +334,146 @@ The exact Huawei Health APK (11.0.0.517) contains:
 
 These classes give us the exact app-side sequence to compare with HCI captures.
 
-## 9. Open questions
+## 9. On-device confirmed capture (2026-11-25)
+
+A rooted-phone capture with Frida (GATT + `javax.crypto.Cipher`) produced a
+complete HiChain3 session and decrypted FE86 commands. Values below are
+sanitised; per-session keys, MACs and personal data are not published.
+
+### 9.1 LinkParams response (CONFIRMED)
+
+Request: `5A 00 0B 00 01 01 01 00 02 00 03 00 04 00 F1 3B`
+
+Response (TLVs decoded):
+
+| Field | Value | Meaning |
+|---|---|---|
+| `0x01` | `01` | protocol version 1 |
+| `0x02` | `00 F4` | slice size 244 |
+| `0x03` | `00 F4` | MTU 244 |
+| `0x04` | `00 00` | connection interval field 0 |
+| `0x05` | `00 01 <16-byte nonce>` | auth version **1**, server nonce |
+| `0x07` | `04` | device support type **4 = HiChain3** |
+| `0x09` | `00` | bond state 0 |
+| `0x0D` | `00` | encryption method 0 |
+
+This is the first hardware confirmation that this Band 9 uses **HiChain3**
+(`authMode=4`), not HiChain Lite.
+
+### 9.2 Security negotiation (CONFIRMED)
+
+`0x01/0x33` request TLVs:
+
+```
+0x01 = 04                       auth mode 4 (HiChain3)
+0x02 = 01
+0x05 = <16-byte Android ID>     (redacted)
+0x03 = 01
+0x04 = 00
+0x06 = "phoneIdentify"
+0x07 = "OnePlus 11R 5G"
+```
+
+The response contains a 64-ASCII-hex `peerAuthId`, an 18-byte zero field, and
+the band's own peer-auth ID/address (redacted).
+
+### 9.3 HiChain3 JSON handshake (CONFIRMED)
+
+The auth exchange is carried in `0x01/0x28` packets whose payload is a JSON
+object (not ordinary TLVs), split across LP frames:
+
+```
+{"authForm":0,"payload":{"isoSalt":"<32 hex>","token":"<64 hex>",
+ "peerAuthId":"<64 hex>", "peerUserType":0, "operationCode":2,
+ "version":{"minVersion":"1.0.0","currentVersion":"2.0.16"}},
+ "message":32785,"groupAndModuleVersion":"2.0.1","isDeviceLevel":false}
+```
+
+The app answers with its own `peerAuthId`, then a `nonce` + `encResult`,
+and the band returns a `returnCodeMac`. The final `0x01/0x28` packet carries
+`"com.huawei.health"` and status TLV `0x7F = 0x000186A0` (100000 = success).
+
+**Implication:** independent auth requires reproducing HiChain3 JSON steps and
+the account-bound long-term key; this is not a simple password. The handshake
+is now fully captured for implementation.
+
+### 9.4 TLV encryption (CONFIRMED)
+
+Encrypted payloads use:
+
+```
+0x7C len 1 value 01          encryption flag
+0x7D len 16 value <IV>       GCM IV
+0x7E len n value <ciphertext || 16-byte tag>
+```
+
+- **AES-GCM**, not AES-CBC, for this session.
+- A 16-byte tag is appended to the ciphertext.
+- The key is per-session and was observed in the app's `SecretKeySpec`.
+  The key is **not** published here.
+- Decryption was verified by matching each FE01 ciphertext to the app's
+  `Cipher.doFinal` input and obtaining valid TLVs.
+
+### 9.5 Confirmed command map
+
+| Service/command | Direction | Plaintext example | Meaning | Status |
+|---|---|---|---|---|
+| `0x07/0x17` | tx | `01 01 01` / `01 01 00` | automatic/continuous HR **on/off** | **CONFIRMED** |
+| `0x07/0x24` | tx | `01 01 01` / `01 01 00` | automatic SpO₂ **on/off** | **CONFIRMED** |
+| `0x07/0x25` | tx | `01 01 01 02 01 5A` | SpO₂ low alert threshold (0x5A=90%) | **CONFIRMED** |
+| `0x07/0x1D` | tx | `01 01 01 02 01 78` | HR high alert threshold (120 bpm) | **CONFIRMED** |
+| `0x07/0x22` | tx | `01 01 01 02 01 28` | HR low alert threshold (40 bpm) | **CONFIRMED** |
+| `0x07/0x03` | tx | `01 00` | get today total | **CONFIRMED** |
+| `0x07/0x0A` | tx | `81 00 03 04 <start> 04 04 <end>` | sample frame count | **CONFIRMED** |
+| `0x07/0x0B` | rx | `81 ...` | sample frame data (minute records) | **CONFIRMED** |
+| `0x07/0x0C` | tx | `81 00 03 04 <start> 04 04 <end>` | status frame count | **CONFIRMED** |
+| `0x07/0x0D` | rx | `81 ...` | status frame data | **CONFIRMED** |
+| `0x07/0x1E` | tx | `01 04 <time> 02 04 <time> 0D 01 00/01` | likely stress/SpO₂ data window | LIKELY |
+| `0x07/0x1F` | tx | `02 04 <time> 03 04 <time> 04 01 00` | likely data window | LIKELY |
+| `0x07/0x26` | tx | `01 04 <time> 02 04 <time>` | likely data window | LIKELY |
+| `0x2C/0x01` | tx | `01 0D "sequence_data" 02 01 16 05 04 <start> 06 04 <end> 0C 04 <...>` | request sleep/sequence file | **CONFIRMED** |
+| `0x2C/0x01` | rx | `... 7F 04 00 02 32 81` | no new file (`0x00023281`) | **CONFIRMED** |
+| `0x0F/0x01`–`0x0F/0x0A` | both | file-transfer TLVs | OTA/file service | **CONFIRMED transport, semantics partial** |
+| `0x27/0x01` | both | version/capability TLVs | device version/capability | **CONFIRMED** |
+| `0x34/0x01` | both | app IDs (`hw.unitedevice.track`, `in.huawei.fitness`, ...) | P2P service registry | **CONFIRMED** |
+| `0x37/0x03` / `0x37/0x02` | both | sport config / dictionary sync | data dictionary | **CONFIRMED** |
+
+### 9.6 Device identity (CONFIRMED)
+
+The authenticated `0x27/0x01` device-info response contains a JSON constants
+object. Sanitised fields:
+
+| Field | Value |
+|---|---|
+| `DT` (device type) | `Kimi-B19FB` |
+| `DV` (firmware) | `4.2.0.230(C00M07)` |
+| `HEALTH_MODEL` | `THREECIRCLECARD` |
+| `CC` (country) | `GB` |
+| `DID` (unique device id) | **redacted** |
+| `MANUFACTURER` | OnePlus (phone side) |
+
+This is the authoritative firmware/model source. The standard DIS remains
+useless (`HUAWEI` / `1.0.0.1`).
+
+### 9.7 Interval conclusion (CONFIRMED on device)
+
+The settings toggle experiment produced:
+
+```
+automatic HR off:   0x07/0x17  -> 01 01 00
+automatic HR on:    0x07/0x17  -> 01 01 01
+automatic SpO2 off: 0x07/0x24  -> 01 01 00
+automatic SpO2 on:  0x07/0x24  -> 01 01 01
+```
+
+There is **no interval field** in either command. The only numeric fields in
+the surrounding commands are alert thresholds (`0x1D`, `0x22`, `0x25`), not
+sampling periods. Aggressive/configurable intervals are therefore **not
+available through Huawei Health's command surface** and are almost certainly
+firmware-controlled.
+
+## 10. Open questions
+
 
 1. Which auth family does this firmware report?
 2. Is the unit already bound to an account, and does that block an independent

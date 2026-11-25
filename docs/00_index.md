@@ -16,14 +16,20 @@ Start here.
 | `10_lab_notebook.md` | Chronological experiment log (N001–N013) |
 | `11_deliverables.md` | Deliverables map and reproducibility commands |
 | `12_huawei_health_architecture.md` | Static architecture of Huawei Health 11.0.0.517 (BLE stack, HiChain, command builders, storage, native libs) |
+| `13_capture_results.md` | Runtime reference capture: HiChain3, AES-GCM, confirmed commands, interval result |
 
 ## Current bottom line
 
 - **Working today:** account-free, timestamped 1 Hz heart rate over standard
   BLE HRS (`0x180D/0x2A37`), stored in SQLite/JSONL, with reconnect.
-- **Not yet working:** proprietary FE86 authentication, SpO₂, HRV, history,
-  configurable intervals.
-- **In progress:** rooted-phone reference capture (Huawei Health 11.0.0.517).
+- **Captured and decoded:** HiChain3 authentication handshake, AES-GCM FE86
+  TLV encryption, automatic HR/SpO₂ settings, fitness-history and file-request
+  commands.
+- **Not yet working independently:** reproducing HiChain3 from Linux (requires
+  the account-bound key or a consented factory reset), live proprietary HR/RRI,
+  and historical record field decoding.
+- **Confirmed hardware limit:** Huawei Health exposes only on/off for
+  automatic HR and SpO₂; there is no sampling-interval control.
 - **Not attempted:** firmware modification.
 
 ## Quick commands

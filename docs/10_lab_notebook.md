@@ -131,7 +131,70 @@ hypothesis.
 
 ---
 
+## N014 — HiChain3 handshake captured (CONFIRMED)
+
+- **Time:** 2026-11-25 16:21–16:40
+- **Method:** Frida GATT hooks on `:PhoneService` + `javax.crypto.Cipher` hooks;
+  forced one Bluetooth reconnect, then opened the Band 9 device page.
+- **LinkParams response:** protocol version 1, slice size 244, MTU 244,
+  **authVersion 1**, **deviceSupportType 4 (HiChain3)**, bond state 0,
+  encryption method 0.
+- **Device identity:** `Kimi-B19FB`, firmware **`4.2.0.230(C00M07)`**,
+  health model `THREECIRCLECARD`, country `GB` (unique device ID redacted).
+- **Security negotiation:** auth mode 4, Android ID, `phoneIdentify`,
+  `OnePlus 11R 5G`.
+- **HiChain3 JSON:** `isoSalt`, `token`, `peerAuthId`, `operationCode=2`,
+  `message=32785`, `groupAndModuleVersion=2.0.1`, `isDeviceLevel=false`;
+  final success `0x7F = 0x000186A0`.
+- **Conclusion:** this Band 9 uses HiChain3, and the full handshake is now
+  captured. Independent auth still requires the account-bound long-term key.
+
+## N015 — AES-GCM TLV decryption (CONFIRMED)
+
+- **Method:** matched each `0x7E` ciphertext from FE01 to the app's
+  `Cipher.doFinal` output; plaintext = `doFinal` input.
+- **Result:** TLV envelope is `0x7C` flag, `0x7D` 16-byte IV, `0x7E`
+  ciphertext + 16-byte GCM tag. AES-GCM, per-session key.
+- **Confirmed commands:**
+  - `0x07/0x17` automatic HR on/off (`01 01 01` / `01 01 00`)
+  - `0x07/0x24` automatic SpO₂ on/off (`01 01 01` / `01 01 00`)
+  - `0x07/0x1D` HR high alert (120 bpm)
+  - `0x07/0x22` HR low alert (40 bpm)
+  - `0x07/0x25` SpO₂ low alert (90%)
+  - `0x07/0x03`, `0x0A/0x0B`, `0x0C/0x0D` fitness history
+  - `0x2C/0x01` sleep/RRI file request (`sequence_data`,
+    `rrisqi_data.bin`), response `0x00023281` = no new file
+  - `0x0F/*` file transfer; `0x27/*` version/capability; `0x34/0x01` P2P app
+    registry; `0x37/*` data dictionary
+- **Conclusion:** the proprietary channel is now readable end-to-end. The
+  remaining work is reimplementing HiChain3 and the specific measurement
+  streams.
+
+## N016 — Settings toggle experiment: no interval (CONFIRMED)
+
+- **Action:** toggled Continuous heart rate off/on, then Automatic SpO₂ off/on
+  in Huawei Health.
+- **Captured:**
+  - `0x07/0x17` `01 01 00` then `01 01 01`
+  - `0x07/0x24` `01 01 00` then `01 01 01`
+  - `0x07/0x25` `01 01 01 02 01 5A` (SpO₂ alert 90%)
+- **Conclusion:** both are pure on/off commands. **No interval parameter exists
+  in the app's command surface.** Aggressive intervals are firmware-controlled;
+  this is a hard negative result, not an untested hypothesis.
+
+## N017 — Remaining work
+
+- Reimplement HiChain3 with the captured handshake (requires the long-term
+  account-bound key or a factory reset to bind a new key).
+- Test `0x19/0x01` live HR and `0x19/0x05` RRI on Band 9.
+- Decode the `0x07/0x0B` minute records (HR/SpO₂/steps) and `0x2C` files.
+- Decide between HRS (simple, 1 Hz) and proprietary (auth, history, settings).
+- Test HRS after reboot/charging for true 24×7.
+
+---
+
 ## Open experiments (next)
+
 
 1. Read LinkParams on the normal endpoint with the phone disconnected.
 2. Determine auth family/version and whether the unit is account-bound.

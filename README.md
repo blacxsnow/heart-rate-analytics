@@ -9,6 +9,7 @@ implementation during reverse engineering.
 
 | Capability | Status | Evidence |
 |---|---|---|
+| Device/firmware identified | **Verified** | `Kimi-B19FB`, firmware `4.2.0.230(C00M07)`, proprietary device-info |
 | Discover Band 9 | **Verified** | `band9 scan`, `band9 endpoints` |
 | Enumerate GATT | **Verified** | `band9 gatt`, `captures/gatt/` |
 | Standard HRS heart rate | **Verified** | 213 packets / 212 s, ~1 Hz, screen off |
@@ -17,10 +18,10 @@ implementation during reverse engineering.
 | HR without Huawei account | **Verified** | no pairing/bonding used |
 | HR with band screen off | **Verified** | 1.17 s max gap over 212 s |
 | HR after reboot / charging | **Not yet verified** | experiment pending |
-| Proprietary FE86 authentication | **In progress** | LinkParams probe + Android capture |
-| Real-time HR via FE86 (`0x19`) | **Hypothesis** | Huawhoop/Band 10 evidence |
-| SpO₂, HRV, stress, sleep, steps | **Not yet verified on Band 9** | historical routes known from references |
-| Configurable aggressive intervals | **Not exposed by Huawei Health or public projects** | APK command builders carry only on/off; see `04_protocol_spec.md` §6.1 |
+| Proprietary FE86 authentication | **HiChain3 handshake captured** | authVersion 1, deviceSupportType 4; reimplementation pending |
+| Real-time HR via FE86 (`0x19`) | **Hypothesis** | Huawhoop/Band 10 evidence; not seen on Band 9 yet |
+| SpO₂, HRV, stress, sleep, steps | **Partial** | automatic SpO₂ on/off confirmed; data paths not yet decoded |
+| Configurable aggressive intervals | **Confirmed absent in Huawei Health** | on-device capture: only on/off and alert thresholds |
 | Firmware modification | **Out of scope for now** | see `docs/08_firmware_investigation.md` |
 
 > The minimum success criterion is already met: a locally running Python

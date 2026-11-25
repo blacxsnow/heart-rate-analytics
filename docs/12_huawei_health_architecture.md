@@ -3,9 +3,13 @@
 **App:** `com.huawei.health` 11.0.0.517 (versionCode 1010050517)
 **APK:** 99,304,221 bytes, pulled from the rooted OnePlus 11R
 **Decompiler:** JADX 1.5.7 (`--no-res`)
-**Status:** static architecture report. Runtime/HCI confirmation is the next
-phase; treat class semantics as **APK-CONFIRMED**, device behaviour as
-**UNVERIFIED** until captured.
+**Status:** static architecture report, now cross-checked against a runtime
+capture. Class semantics are **APK-CONFIRMED**; device behaviour is confirmed
+where noted in `13_capture_results.md`.
+
+Runtime result (2026-11-25): the Band 9 negotiated **HiChain3** (authVersion 1,
+deviceSupportType 4), FE86 TLVs used **AES-GCM**, and the decrypted command
+sequence matched the static builders below. See `13_capture_results.md`.
 
 ---
 
@@ -232,11 +236,15 @@ No native reversing is planned until Java/HCI captures are exhausted.
 6. **Historical data is service `0x07` and file services** (`0x2C`), matching
    Gadgetbridge.
 
-## 9. Next runtime checks
+## 9. Runtime checks completed
 
-- Capture E01/E02 and confirm the LinkParams/auth sequence.
-- Confirm which of HiChain Lite vs HiChain3 the Band 9 uses.
-- Capture E03 and measure the actual `0x19/0x03` rate.
-- Capture E06 and confirm there is no interval payload.
-- Capture E08 and map the historical file/chunk format.
-- Compare each captured command with the static builder table above.
+- E01/E02 pairing/initialization: captured; HiChain3 confirmed.
+- LinkParams: protocol version 1, authVersion 1, deviceSupportType 4.
+- AES-GCM TLV encryption confirmed; plaintext recovered.
+- `0x07/0x17` automatic HR and `0x07/0x24` automatic SpO₂ confirmed as
+  on/off-only.
+- Fitness history and file requests observed (`0x07/0x03`, `0x0A`/`0B`,
+  `0x0C`/`0D`, `0x2C/0x01`, `0x0F/*`).
+
+Still open: live HR/RRI (`0x19`), historical record field decoding, and the
+decision on factory reset to bind an independent HiChain3 key.
