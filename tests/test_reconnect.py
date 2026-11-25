@@ -474,3 +474,32 @@ def test_band_nearby_with_broadcast_off_is_reported(tmp_path, monkeypatch) -> No
     asyncio.run(scenario())
 
 
+def test_visible_band_uses_short_backoff(tmp_path, monkeypatch) -> None:
+    fake = FakeBLE(monkeypatch)
+    fake.endpoint_present = False
+    fake.normal_visible = True
+
+    async def scenario() -> None:
+        config = fast_config(
+            backoff_initial=30.0,
+            backoff_max=30.0,
+            visible_band_backoff_max=0.2,
+        )
+        db, state, collector, _control = make_runtime(tmp_path, config)
+        task = asyncio.create_task(collector.run())
+        try:
+            await wait_until(
+                lambda: state.snapshot()["consecutive_failures"] >= 1
+                and state.snapshot()["next_retry_at"] is not None,
+                label="visible-band backoff",
+            )
+            snapshot = state.snapshot()
+            remaining = snapshot["next_retry_at"] - time.time()
+            assert 0 < remaining <= 1.0, remaining
+        finally:
+            await stop_collector(collector, task)
+            db.close()
+
+    asyncio.run(scenario())
+
+

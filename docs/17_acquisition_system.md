@@ -63,7 +63,9 @@ The system never claims that PC reception equals sensor acquisition time.
 ## 4. Reliability design
 
 - **Reconnect:** exponential backoff (2 s → 60 s) with jitter; reset after a
-  stable connection (≥ 15 s or data).
+  stable connection (≥ 15 s or data). While the band is visible but HR Data
+  Broadcast is off, the delay is capped at 15 s so starting the broadcast is
+  picked up quickly.
 - **Watchdog:** if no notification arrives for 15 s on a connected link, the
   daemon disconnects and reconnects.
 - **Adapter failure:** scan errors are recorded as `adapter_unavailable`; the

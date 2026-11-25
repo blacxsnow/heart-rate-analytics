@@ -43,6 +43,7 @@ class CollectorConfig:
     stable_after: float = 15.0
     spool_drain_interval: float = 60.0
     poll_interval: float = 1.0
+    visible_band_backoff_max: float = 15.0
 
 
 @dataclass
@@ -560,6 +561,11 @@ class BandHRCollector:
                 if self._last_control.paused:
                     continue
                 delay = self._backoff_seconds()
+                if self.state.snapshot().get("band_visible") is True:
+                    # The band is powered and nearby but broadcasting is off.
+                    # Check frequently so starting the broadcast is picked up
+                    # within seconds instead of after the full 60 s backoff.
+                    delay = min(delay, config.visible_band_backoff_max)
                 self.state.update(next_retry_at=time.time() + delay, force=True)
                 LOG.info("reconnecting in %.1fs", delay)
                 outcome = await self._wait_for_retry(delay)

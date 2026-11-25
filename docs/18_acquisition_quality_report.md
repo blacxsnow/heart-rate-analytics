@@ -30,7 +30,7 @@ unit was killed and restarted.
 
 | Test | Result |
 |---|---|
-| Unit/integration suite | **86 passed** |
+| Unit/integration suite | **87 passed** |
 | Reconnect state machine | 9 fake-BLE tests: link drop, manual reconnect, backoff cancellation, pause/resume, stale watchdog, missing endpoint, stale BlueZ link, cache removal, broadcast-off classification |
 | Advertisement classification | 5 tests, including the live `HUAWEI Band 10-TEST` normal name and HR/normal separation |
 | Simulated 60 s acquisition | 72 measurements at ~0.5 s; DB/session/events/state written |
