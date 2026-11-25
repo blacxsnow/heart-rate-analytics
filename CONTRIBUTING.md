@@ -76,4 +76,5 @@ Please include:
 - documentation updates for new metrics, commands, or limitations.
 
 By contributing, you agree that your contribution is licensed under the
-repository's MIT license and that you will follow the Code of Conduct.
+repository's MIT license and that you will follow the
+[Code of Conduct](CODE_OF_CONDUCT.md).

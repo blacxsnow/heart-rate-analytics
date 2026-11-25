@@ -61,6 +61,18 @@ Start here.
   unknown streams.
 - **Not attempted:** firmware modification.
 
+## Public repository
+
+- **License:** MIT (`LICENSE`)
+- **Contributing:** `CONTRIBUTING.md`
+- **Security and privacy:** `SECURITY.md`
+- **Code of conduct:** `CODE_OF_CONDUCT.md`
+- **Issue/PR templates:** `.github/ISSUE_TEMPLATE/`, `.github/PULL_REQUEST_TEMPLATE.md`
+
+Issues, PRs and documentation must not contain MAC addresses, device IDs,
+serial numbers, account IDs, keys, tokens, raw health data, or unredacted
+captures. Use synthetic addresses and aggregate metrics.
+
 ## Quick commands
 
 ```bash

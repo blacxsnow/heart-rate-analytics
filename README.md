@@ -165,8 +165,9 @@ records, or unredacted packet captures. Use synthetic addresses such as
 ## Contributing
 
 See `CONTRIBUTING.md` for setup, tests, style, privacy and hardware-safety
-rules. The short version: run the test suite, keep analytics read-only with
-respect to acquisition records, and never add raw captures or personal data.
+rules, and `CODE_OF_CONDUCT.md` for participation expectations. The short
+version: run the test suite, keep analytics read-only with respect to
+acquisition records, and never add raw captures or personal data.
 
 ## Security
 
