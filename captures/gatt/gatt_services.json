@@ -1,0 +1,115 @@
+{
+  "note": "Sanitised GATT map for Huawei Band 9 (KIM-B19). Addresses removed. Captured 2026-11-25 with Bleak/BlueZ 5.88.",
+  "normal_endpoint": {
+    "name": "HUAWEI Band 9-<suffix>",
+    "advertised_service": "00003802-0000-1000-8000-00805f9b34fb",
+    "manufacturer_data": {
+      "0x027d": "010300ffff"
+    },
+    "services": [
+      {
+        "uuid": "0000fe86-0000-1000-8000-00805f9b34fb",
+        "name": "Huawei Link Protocol",
+        "characteristics": [
+          {"uuid": "0000fe01-0000-1000-8000-00805f9b34fb", "properties": ["write-without-response", "write"]},
+          {"uuid": "0000fe02-0000-1000-8000-00805f9b34fb", "properties": ["notify"], "descriptor": "00002902-0000-1000-8000-00805f9b34fb"}
+        ]
+      },
+      {
+        "uuid": "00001800-0000-1000-8000-00805f9b34fb",
+        "name": "Generic Access Profile",
+        "characteristics": [
+          {"uuid": "00002a00-0000-1000-8000-00805f9b34fb", "properties": ["read"]},
+          {"uuid": "00002a01-0000-1000-8000-00805f9b34fb", "properties": ["read"]},
+          {"uuid": "00002aa6-0000-1000-8000-00805f9b34fb", "properties": ["read"]}
+        ]
+      },
+      {
+        "uuid": "00001801-0000-1000-8000-00805f9b34fb",
+        "name": "Generic Attribute Profile",
+        "characteristics": [
+          {"uuid": "00002a05-0000-1000-8000-00805f9b34fb", "properties": ["indicate"], "descriptor": "00002902-0000-1000-8000-00805f9b34fb"},
+          {"uuid": "00002b29-0000-1000-8000-00805f9b34fb", "properties": ["read"]},
+          {"uuid": "00002b2a-0000-1000-8000-00805f9b34fb", "properties": ["read"]}
+        ]
+      },
+      {
+        "uuid": "0000180a-0000-1000-8000-00805f9b34fb",
+        "name": "Device Information",
+        "characteristics": [
+          {"uuid": "00002a24-0000-1000-8000-00805f9b34fb", "properties": ["read"]},
+          {"uuid": "00002a25-0000-1000-8000-00805f9b34fb", "properties": ["read"]},
+          {"uuid": "00002a26-0000-1000-8000-00805f9b34fb", "properties": ["read"]},
+          {"uuid": "00002a27-0000-1000-8000-00805f9b34fb", "properties": ["read"]},
+          {"uuid": "00002a28-0000-1000-8000-00805f9b34fb", "properties": ["read"]},
+          {"uuid": "00002a29-0000-1000-8000-00805f9b34fb", "properties": ["read"]}
+        ]
+      },
+      {
+        "uuid": "00003802-0000-1000-8000-00805f9b34fb",
+        "name": "Huawei vendor 0x3802",
+        "characteristics": [
+          {"uuid": "00004a02-0000-1000-8000-00805f9b34fb", "properties": ["read", "write", "notify"], "descriptor": "00002902-0000-1000-8000-00805f9b34fb"}
+        ]
+      },
+      {
+        "uuid": "0000e2e3-0000-1000-8000-00805f9b34fb",
+        "name": "Huawei vendor 0xE2E3",
+        "characteristics": [
+          {"uuid": "0000e2e4-0000-1000-8000-00805f9b34fb", "properties": ["write-without-response", "write"]},
+          {"uuid": "0000e2e5-0000-1000-8000-00805f9b34fb", "properties": ["read", "notify"], "descriptor": "00002902-0000-1000-8000-00805f9b34fb"}
+        ]
+      },
+      {
+        "uuid": "cc353442-be58-4ea2-876e-11d8d6976366",
+        "name": "Huawei vendor CC353442",
+        "characteristics": [
+          {"uuid": "c551c36a-0377-4a29-9657-74ffb655a188", "properties": ["read", "write", "notify"], "descriptor": "00002902-0000-1000-8000-00805f9b34fb"}
+        ]
+      },
+      {
+        "uuid": "00001812-0000-1000-8000-00805f9b34fb",
+        "name": "Human Interface Device",
+        "characteristics": [
+          {"uuid": "00002a4a-0000-1000-8000-00805f9b34fb", "properties": ["read"]},
+          {"uuid": "00002a4b-0000-1000-8000-00805f9b34fb", "properties": ["read"], "descriptor": "00002907-0000-1000-8000-00805f9b34fb"},
+          {"uuid": "00002a4c-0000-1000-8000-00805f9b34fb", "properties": ["write-without-response"]},
+          {"uuid": "00002a4d-0000-1000-8000-00805f9b34fb", "properties": ["read", "notify"], "descriptor": "00002902-0000-1000-8000-00805f9b34fb"},
+          {"uuid": "00002a4d-0000-1000-8000-00805f9b34fb", "properties": ["read", "notify"], "descriptor": "00002902-0000-1000-8000-00805f9b34fb"},
+          {"uuid": "00002a4e-0000-1000-8000-00805f9b34fb", "properties": ["read", "write-without-response"]},
+          {"uuid": "00002a22-0000-1000-8000-00805f9b34fb", "properties": ["read", "notify"], "descriptor": "00002902-0000-1000-8000-00805f9b34fb"},
+          {"uuid": "00002a32-0000-1000-8000-00805f9b34fb", "properties": ["read", "write-without-response", "write"]}
+        ]
+      },
+      {
+        "uuid": "0000e2cb-0000-1000-8000-00805f9b34fb",
+        "name": "Huawei vendor 0xE2CB",
+        "characteristics": [
+          {"uuid": "0000e914-0000-1000-8000-00805f9b34fb", "properties": ["write-without-response", "write"]},
+          {"uuid": "00001a19-0000-1000-8000-00805f9b34fb", "properties": ["read", "notify"], "descriptor": "00002902-0000-1000-8000-00805f9b34fb"}
+        ]
+      }
+    ]
+  },
+  "hr_broadcast_endpoint": {
+    "name": "HUAWEI Band HR-<suffix>",
+    "extra_service": {
+      "uuid": "0000180d-0000-1000-8000-00805f9b34fb",
+      "name": "Heart Rate",
+      "characteristics": [
+        {"uuid": "00002a37-0000-1000-8000-00805f9b34fb", "properties": ["notify"]},
+        {"uuid": "00002a38-0000-1000-8000-00805f9b34fb", "properties": ["read"], "value": "02"},
+        {"uuid": "00002a39-0000-1000-8000-00805f9b34fb", "properties": ["write"]}
+      ]
+    },
+    "dis_readings": {
+      "manufacturer": "HUAWEI",
+      "model": "HUAWEI",
+      "serial": "HUAWEI",
+      "firmware": "1.0.0.1",
+      "hardware": "1.0.0.1",
+      "software": "1.0.0.1",
+      "body_sensor_location": "02"
+    }
+  }
+}

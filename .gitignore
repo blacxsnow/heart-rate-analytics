@@ -1,0 +1,30 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+build/
+dist/
+
+# Local runtime data (may contain MAC addresses / raw personal data)
+data/
+captures/raw/
+captures/live/
+captures/android/
+config.local.*
+*.db
+*.sqlite
+*.sqlite3
+*.log
+
+# Secrets
+.env
+auth.json
+band.ini
+
+# Keep the documentation samples
+!captures/README.md
+!captures/gatt/device_info_broadcast.json
+!captures/gatt/gatt_services.json
