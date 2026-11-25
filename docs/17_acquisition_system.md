@@ -121,10 +121,15 @@ The restart button on the dashboard is disabled by default. Enable it with
   Annotation date-time input is interpreted as IST and stored as UTC.
 - Live SVG graph for 1/5/15/60 minutes; line breaks at gaps and red bands for
   disconnection intervals.
-- Start/connect/disconnect/stop/reconnect controls.
+- Start/connect/disconnect/stop/reconnect controls, plus a confirmed
+  **Reset Bluetooth adapter** action.
+- Manual **Band battery** log (the unauthenticated BLE interface exposes no
+  battery service) with latest reading and observed %/hour and %/day drain.
 - Sleep annotation form with retrospective editing/deletion; crossing midnight
   is supported (an end at/before the start is interpreted as the next day).
 - CSV export of all raw measurements.
+- See `20_battery_and_background_metrics.md` for the battery and sleep/SpO₂
+  availability limits.
 
 ## 7. Analysis application
 

@@ -95,6 +95,7 @@ DASHBOARD_HTML = r"""<!doctype html>
     <div class="card"><div class="label">Measurements</div><div class="value" id="total">0</div><div class="sub" id="db-size">database —</div></div>
     <div class="card"><div class="label">Last connection</div><div class="value" id="last-conn" style="font-size:15px">—</div><div class="sub" id="last-disc">last disconnect —</div></div>
     <div class="card"><div class="label">Reconnects</div><div class="value" id="reconnects">0</div><div class="sub" id="spool">spool 0</div></div>
+    <div class="card"><div class="label">Band battery</div><div class="value" id="battery-value">—</div><div class="sub" id="battery-at">manual; no BLE service</div></div>
   </section>
 
   <section class="panel">
@@ -136,6 +137,19 @@ DASHBOARD_HTML = r"""<!doctype html>
 
   <section class="panel">
     <div class="row between" style="margin-bottom:10px">
+      <strong>Band battery (manual)</strong>
+      <span class="muted">The HR endpoint exposes no Battery Service; read the band screen.</span>
+    </div>
+    <form id="battery-form">
+      <div><label for="battery-percent">Battery %</label><input id="battery-percent" type="number" min="0" max="100" step="1" required></div>
+      <div><label for="battery-note">Note</label><input id="battery-note" type="text" placeholder="e.g. broadcast on, 2 h"></div>
+      <div><button class="primary" type="submit">Log battery reading</button></div>
+    </form>
+    <div id="battery-latest" class="muted" style="margin-top:8px">No readings yet.</div>
+  </section>
+
+  <section class="panel">
+    <div class="row between" style="margin-bottom:10px">
       <strong>Sleep annotations</strong>
       <span class="muted">Approximate; crossing midnight is supported.</span>
     </div>
@@ -156,6 +170,7 @@ let points = [];
 let disconnects = [];
 let annotationCache = [];
 let editingId = null;
+let batteryReadings = [];
 
 const TZ = 'Asia/Kolkata';
 const TZ_OFFSET_MS = 330 * 60 * 1000; // IST is UTC+05:30 with no DST.
@@ -384,12 +399,54 @@ function escapeHtml(s) {
 async function refreshAnnotations() {
   try { annotationCache = await getJSON('/api/annotations'); renderAnnotations(); } catch (e) {}
 }
+function renderBattery() {
+  if (!batteryReadings.length) {
+    $('battery-value').textContent = '—';
+    $('battery-at').textContent = 'manual; no BLE service';
+    $('battery-latest').textContent = 'No readings yet.';
+    return;
+  }
+  const newest = batteryReadings[0];
+  const recent = batteryReadings.filter(
+    r => Date.now() - new Date(r.recorded_at).getTime() <= 24 * 3600 * 1000
+  );
+  const oldest = recent.length ? recent[recent.length - 1] : newest;
+  $('battery-value').textContent = newest.percent == null ? '—' : `${newest.percent}%`;
+  $('battery-at').textContent = `${fmtTime(newest.recorded_at)}${newest.note ? ' · ' + newest.note : ''}`;
+  let text = `Last: ${newest.percent}% at ${fmtTime(newest.recorded_at)}`;
+  if (newest.percent != null && oldest.percent != null && newest !== oldest) {
+    const hours = (new Date(newest.recorded_at) - new Date(oldest.recorded_at)) / 3600000;
+    if (hours >= 1) {
+      const rate = (oldest.percent - newest.percent) / hours;
+      const perDay = rate * 24;
+      const sign = rate >= 0 ? '−' : '+';
+      text += ` · ${sign}${Math.abs(rate).toFixed(2)} %/h (${sign}${Math.abs(perDay).toFixed(1)} %/day) over ${hours.toFixed(1)} h`;
+    }
+  }
+  $('battery-latest').textContent = text;
+}
+async function refreshBattery() {
+  try { batteryReadings = await getJSON('/api/battery'); renderBattery(); } catch (e) {}
+}
 async function control(action) {
   try {
     await getJSON('/api/control', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({action}) });
     await refreshStatus();
   } catch (e) { alert('Control failed: ' + e.message); }
 }
+$('battery-form').addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  const percent = parseInt($('battery-percent').value, 10);
+  if (!(percent >= 0 && percent <= 100)) { alert('Battery % must be 0–100'); return; }
+  const response = await fetch('/api/battery', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ percent, note: $('battery-note').value || null }),
+  });
+  if (!response.ok) { alert('Could not log battery reading'); return; }
+  $('battery-note').value = '';
+  await refreshBattery();
+});
 $('ann-form').addEventListener('submit', async (ev) => {
   ev.preventDefault();
   const start = istInputToDate($('ann-start').value);
@@ -429,10 +486,11 @@ document.querySelectorAll('[data-action]').forEach(btn => {
 });
 $('export').onclick = () => { window.location = '/api/export.csv'; };
 $('restart').onclick = () => control('restart');
-refreshStatus(); refreshHR(); refreshAnnotations(); tickClock();
+refreshStatus(); refreshHR(); refreshAnnotations(); refreshBattery(); tickClock();
 setInterval(refreshStatus, 2000);
 setInterval(refreshHR, 1000);
 setInterval(refreshAnnotations, 10000);
+setInterval(refreshBattery, 30000);
 setInterval(tickClock, 1000);
 </script>
 </body>

@@ -23,6 +23,7 @@ Start here.
 | `17_acquisition_system.md` | 24×7 acquisition daemon, database contract, reliability, systemd deployment, dashboard, analysis, validation, HR-broadcast experiment |
 | `18_acquisition_quality_report.md` | Deployment and quality validation: tests, simulation metrics, crash recovery, empty real DB, pending reboot/BLE checks |
 | `19_endurance_test.md` | 10-minute fault-injection endurance test: adapter loss, pause/resume, SIGKILL, web restart, forced link drop, recovery metrics |
+| `20_battery_and_background_metrics.md` | BLE battery availability (none unauthenticated), manual battery log/drain rate, and the sleep/SpO₂ background-recording experiment |
 
 ## Current bottom line
 

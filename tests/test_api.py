@@ -82,3 +82,21 @@ def test_annotations_and_control(tmp_path) -> None:
         assert control["paused"] is True
         assert client.post("/api/control", json={"action": "start"}).status_code == 200
         assert client.post("/api/control", json={"action": "restart"}).status_code == 403
+
+
+def test_manual_battery_readings(tmp_path) -> None:
+    app = make_app(tmp_path)
+    with TestClient(app) as client:
+        assert client.get("/api/battery").json() == []
+        response = client.post(
+            "/api/battery", json={"percent": 82, "note": "broadcast on, 2 h"}
+        )
+        assert response.status_code == 201
+        assert response.json()["percent"] == 82
+        assert client.post("/api/battery", json={"percent": 79}).status_code == 201
+        readings = client.get("/api/battery").json()
+        assert [row["percent"] for row in readings] == [79, 82]
+        assert readings[0]["note"] is None
+        assert readings[1]["note"] == "broadcast on, 2 h"
+        assert client.post("/api/battery", json={"percent": 101}).status_code == 422
+        assert client.post("/api/battery", json={"percent": -1}).status_code == 422

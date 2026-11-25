@@ -30,11 +30,12 @@ unit was killed and restarted.
 
 | Test | Result |
 |---|---|
-| Unit/integration suite | **92 passed** |
+| Unit/integration suite | **93 passed** |
 | Reconnect state machine | Link drop, manual reconnect, backoff cancellation, pause/resume, stale watchdog, missing endpoint, stale BlueZ link, cache removal, broadcast-off classification |
 | Failure classification | Adapter powered off, adapter unavailable, stuck discovery → reset, reset control action, exception codes |
 | Advertisement classification | Live `HUAWEI Band 10-TEST` normal name, HR/normal separation, address filter |
 | Endurance run | 10-minute scripted run: adapter power loss, pause/resume, `SIGKILL`, web restart, forced link drop, short adapter cycles — all recovered; see `19_endurance_test.md` |
+| Battery | No standard Battery Service on the HR/normal endpoints; vendor reads require auth. Manual battery log + drain rate added to the dashboard; see `20_battery_and_background_metrics.md` |
 | Simulated 60 s acquisition | 72 measurements at ~0.5 s; DB/session/events/state written |
 | Live dashboard API | status, HR points, CSV export, annotations all returned successfully |
 | Sleep annotation | created, listed and deleted; end-before-start normalised to next day |

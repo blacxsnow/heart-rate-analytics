@@ -52,6 +52,11 @@ class ControlIn(BaseModel):
     action: str
 
 
+class BatteryIn(BaseModel):
+    percent: int = Field(ge=0, le=100)
+    note: str | None = None
+
+
 def _epoch(value: str | None) -> float | None:
     if not value:
         return None
@@ -172,6 +177,42 @@ def create_app(
     @app.get("/api/annotations")
     def annotations() -> list[dict]:
         return db().annotations()
+
+    @app.post("/api/battery", status_code=201)
+    def log_battery(payload: BatteryIn) -> dict[str, Any]:
+        event_id = db().add_event(
+            "battery_reading",
+            details={
+                "percent": payload.percent,
+                "note": payload.note,
+                "source": "manual",
+            },
+        )
+        return {
+            "event_id": event_id,
+            "percent": payload.percent,
+            "recorded_at": iso_utc(),
+        }
+
+    @app.get("/api/battery")
+    def battery_readings(
+        limit: int = Query(default=200, ge=1, le=2000),
+    ) -> list[dict[str, Any]]:
+        readings = []
+        for event in db().events(limit=limit, event_types=["battery_reading"]):
+            try:
+                details = json.loads(event["details"] or "{}")
+            except json.JSONDecodeError:
+                continue
+            readings.append(
+                {
+                    "event_id": event["event_id"],
+                    "recorded_at": event["event_time_utc"],
+                    "percent": details.get("percent"),
+                    "note": details.get("note"),
+                }
+            )
+        return readings
 
     @app.post("/api/annotations", status_code=201)
     def create_annotation(payload: AnnotationIn) -> dict[str, Any]:
