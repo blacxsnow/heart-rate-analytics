@@ -1,0 +1,18 @@
+[Unit]
+Description=Huawei Band 9 acquisition dashboard
+Documentation=file://@REPO@/docs/17_acquisition_system.md
+After=huawei-acquisition.service
+
+[Service]
+Type=simple
+WorkingDirectory=@REPO@
+Environment=BAND9_DATA_DIR=%h/.local/share/band9
+Environment=BAND9_ALLOW_RESTART=0
+Environment=PYTHONUNBUFFERED=1
+ExecStart=@PYTHON@ -m uvicorn fitness_band.api.main:app --host 127.0.0.1 --port 8787
+Restart=always
+RestartSec=5
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=default.target

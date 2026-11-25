@@ -1,0 +1,20 @@
+[Unit]
+Description=Huawei Band 9 heart-rate acquisition
+Documentation=file://@REPO@/docs/17_acquisition_system.md
+# The daemon retries if BlueZ is not ready, so no hard cross-manager dependency.
+After=default.target
+
+[Service]
+Type=simple
+WorkingDirectory=@REPO@
+Environment=BAND9_DATA_DIR=%h/.local/share/band9
+Environment=PYTHONUNBUFFERED=1
+ExecStart=@PYTHON@ -m fitness_band.acquisition.service
+Restart=always
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=30
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=default.target

@@ -73,6 +73,30 @@ band9 export --db data/band9.sqlite3 --csv data/hr.csv --metric heart_rate
 python -m pytest -q
 ```
 
+## 24×7 acquisition service
+
+The repository now also contains a production-oriented acquisition daemon,
+separate dashboard and separate analysis tool. They are independent: stopping
+the dashboard never stops acquisition.
+
+```bash
+pip install -e '.[api,analysis]'
+PYTHON=/path/to/python \
+  bash services/install-user-services.sh
+```
+
+- Daemon: `~/.config/systemd/user/huawei-acquisition.service`
+- Dashboard: <http://127.0.0.1:8787>
+- Database: `~/.local/share/band9/acquisition.sqlite3`
+- Analysis: `band9-analyze --db ~/.local/share/band9/acquisition.sqlite3 --out reports/analysis`
+
+Both units are enabled and lingering is enabled, so they start at boot without
+an interactive login. The daemon retries with exponential backoff until
+**Settings → HR Data Broadcasts** is started on the band. See
+`docs/17_acquisition_system.md` for the schema, reliability design, web controls,
+sleep annotations, analysis definitions and the controlled HR-broadcast
+interference experiment.
+
 ## Data model
 
 Measurements are normalised before storage:

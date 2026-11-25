@@ -20,6 +20,8 @@ Start here.
 | `14_firmware_feasibility.md` | Deep firmware/hardware inspection: Apollo3 secure boot, OTA path, SWD, recovery, staged plan |
 | `15_firmware_static_analysis.md` | Track A: image map and load addresses, OpenHarmony architecture, BLE/HiChain3/HKS, PPG and storage, UI independence |
 | `16_hichain3_streams.md` | Track B: auth flow, band-side HiChain3 evidence, measurement command map, remaining gaps, independent-auth options |
+| `17_acquisition_system.md` | 24×7 acquisition daemon, database contract, reliability, systemd deployment, dashboard, analysis, validation, HR-broadcast experiment |
+| `18_acquisition_quality_report.md` | Deployment and quality validation: tests, simulation metrics, crash recovery, empty real DB, pending reboot/BLE checks |
 
 ## Current bottom line
 
@@ -48,6 +50,9 @@ Start here.
   not streamed to the phone; only a periodic `0x25/0x01` poll was seen. The
   band’s `spo2.bin` file is retrievable via `0x2C`, but its records are older
   PPG/OSA features, not the spot reading.
+- **24×7 acquisition service:** `band9-acquire` daemon + SQLite WAL + separate
+  FastAPI dashboard + separate read-only analysis CLI. Deployed as user
+  services with lingering; see `17_acquisition_system.md`.
 - **Capability matrix:** `capabilities/matrix.yaml` (validated by
   `fitness_band.capabilities`) separates confirmed, partial, hypothesis and
   unknown streams.

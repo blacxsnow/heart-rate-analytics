@@ -10,6 +10,7 @@ dist/
 
 # Local runtime data (may contain MAC addresses / raw personal data)
 data/
+reports/
 captures/raw/
 captures/live/
 captures/android/
