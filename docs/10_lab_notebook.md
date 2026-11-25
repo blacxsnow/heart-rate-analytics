@@ -91,7 +91,7 @@ hypothesis.
 - **Actions:**
   - Installed Huawei Health 11.0.0.517 on rooted OnePlus 11R (Android 16).
   - Pulled `base.apk` (99,304,221 bytes).
-  - Found HCI snoop logs at `/data/misc/bluetooth/logs/`; current log grows.
+  - Found HCI snoop logs at `/data/misc/bluetooth/cached_hci/` (`btsnoop_hci_*.cfa`); current log grows.
   - Installed/pushed Frida server 17.27.5 arm64; `frida-ps -U` works.
   - Decompiled APK with JADX 1.5.7.
 - **Static findings:**

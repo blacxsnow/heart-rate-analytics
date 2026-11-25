@@ -14,7 +14,7 @@ architecture may depend on it.
 | APK | pulled, 99,304,221 bytes |
 | JADX | 1.5.7, decompiled to `/tmp/opencode/android/jadx-health` |
 | Frida server | 17.27.5 arm64, running as root |
-| HCI snoop | active; `/data/misc/bluetooth/logs/bluetooth_*.log` |
+| HCI snoop | active; `/data/misc/bluetooth/cached_hci/btsnoop_hci_*.cfa` |
 | ADB | `64609045` |
 
 The APK is decompiled but the code is heavily obfuscated (`o.*`). Static
@@ -70,11 +70,11 @@ parameter**; they are one-byte on/off toggles.
 ## 4. HCI capture procedure
 
 ```bash
-# Identify the active log (do not delete old logs)
-adb shell su -c 'ls -lt /data/misc/bluetooth/logs/*.log | head'
+# Identify the active btsnoop file (the *.log files are text logs, not btsnoop)
+adb shell su -c 'ls -lt /data/misc/bluetooth/cached_hci/btsnoop_hci_*.cfa | head'
 
 # Pull while the band is idle (read-only)
-adb exec-out su -c 'cat /data/misc/bluetooth/logs/<file>.log' > captures/android/e01.btsnoop
+adb exec-out su -c 'cat /data/misc/bluetooth/cached_hci/<file>.cfa' > captures/android/e01.btsnoop
 
 # Verify it is btsnoop
 file captures/android/e01.btsnoop

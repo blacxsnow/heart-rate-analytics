@@ -86,7 +86,7 @@ For reproducibility (not the final runtime):
 | Huawei Health | `com.huawei.health` 11.0.0.517 (versionCode 1010050517) |
 | APK size | 99,304,221 bytes (base.apk) |
 | Frida server | 17.27.5, arm64 |
-| HCI snoop log | `/data/misc/bluetooth/logs/bluetooth_*.log` |
+| HCI snoop log | `/data/misc/bluetooth/cached_hci/btsnoop_hci_*.cfa` |
 | HCI logging | active (log grows during scans/connections) |
 
 The APK was pulled from the phone and decompiled with JADX 1.5.7. Static
