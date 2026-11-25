@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import random
+import re
 import shutil
 import statistics
 import subprocess
@@ -15,7 +16,7 @@ from pathlib import Path
 from bleak import BleakClient
 from bleak.exc import BleakDBusError, BleakDeviceNotFoundError, BleakError
 
-from ..ble_scanner import find_endpoint
+from ..ble_scanner import find_endpoints
 from ..database import AcquisitionDB
 from ..hrs import HeartRateParseError, parse_heart_rate_measurement
 from .control import ControlState, read_control
@@ -26,6 +27,8 @@ from .timestamping import now_observation
 LOG = logging.getLogger("band9.acquisition")
 HRS_SERVICE = "0000180d-0000-1000-8000-00805f9b34fb"
 HRS_CHAR = "00002a37-0000-1000-8000-00805f9b34fb"
+_HR_NAME_PREFIX = "huawei band hr-"
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 
 
 @dataclass
@@ -39,6 +42,7 @@ class CollectorConfig:
     backoff_max: float = 60.0
     stable_after: float = 15.0
     spool_drain_interval: float = 60.0
+    poll_interval: float = 1.0
 
 
 @dataclass
@@ -46,6 +50,10 @@ class ConnectionResult:
     reason: str
     duration: float
     packets: int
+
+
+class BroadcastOffError(RuntimeError):
+    """The band is visible, but HR Data Broadcast is not active."""
 
 
 class BandHRCollector:
@@ -77,6 +85,7 @@ class BandHRCollector:
         self._attempts = 0
         self._disconnects = 0
         self._paused_event_logged = False
+        self._session_status: str | None = None
 
     def stop(self) -> None:
         self._stop.set()
@@ -96,6 +105,54 @@ class BandHRCollector:
         state = read_control(self.control_path)
         self._last_control = state
         return state
+
+    def _set_session_status(self, status: str) -> None:
+        """Persist a session transition once, not on every loop iteration."""
+        if self._session_id is None or self._session_status == status:
+            return
+        self.db.set_session_status(self._session_id, status)
+        self._session_status = status
+
+    def _hr_broadcast_addresses(self) -> list[str]:
+        """Known/cached addresses of the HR-broadcast endpoint."""
+        addresses: list[str] = []
+        last = self.state.snapshot().get("device_id")
+        if isinstance(last, str) and last and last != "unknown":
+            addresses.append(last)
+        for address, name in _bluez_devices():
+            if name.lower().startswith(_HR_NAME_PREFIX) and address not in addresses:
+                addresses.append(address)
+        return addresses
+
+    def _clear_stale_links(self) -> list[str]:
+        """Release HR endpoints BlueZ still thinks are connected.
+
+        A connected LE peripheral stops advertising. If a previous connection
+        was not torn down (crash, BlueZ quirk, another client), scans will miss
+        the endpoint forever until the stale link is released.
+        """
+        cleared: list[str] = []
+        for address in self._hr_broadcast_addresses():
+            if _disconnect_bluez_device(address):
+                cleared.append(address)
+            elif _bluez_connected(address):
+                # Last resort: a link BlueZ refuses to release suppresses
+                # advertising indefinitely; dropping the cache record forces a
+                # fresh discovery and does not affect the band's broadcast mode.
+                LOG.warning("BlueZ refused to release %s; removing cache entry", address)
+                _remove_bluez_cache(address)
+                cleared.append(address)
+        if cleared:
+            LOG.warning("released stale HR link(s) before scanning: %s", ", ".join(cleared))
+            try:
+                self.db.add_event(
+                    "stale_link_cleared",
+                    session_id=self._session_id,
+                    details={"addresses": cleared},
+                )
+            except Exception:  # cleanup must not stop acquisition
+                LOG.debug("could not record stale-link event", exc_info=True)
+        return cleared
 
     def _set_connected(self, *, endpoint_name: str | None, endpoint_address: str) -> None:
         self.state.update(
@@ -200,7 +257,22 @@ class BandHRCollector:
 
         endpoint = await self._find_endpoint()
         if endpoint is None:
+            snapshot = self.state.snapshot()
+            if snapshot.get("band_visible") and snapshot.get("hr_broadcast_active") is False:
+                raise BroadcastOffError(
+                    "Band is nearby but HR Data Broadcast is off; on the band open "
+                    "Settings → HR Data Broadcasts and start it"
+                )
             raise RuntimeError("HR broadcast endpoint not found")
+
+        # A reconnect click during the scan is satisfied by the connection we
+        # are about to make; do not tear it down immediately afterwards.
+        control = self._control()
+        self._last_force_seen = control.force_reconnect
+        if control.paused:
+            return ConnectionResult(
+                reason="paused", duration=time.monotonic() - started, packets=0
+            )
 
         client = BleakClient(
             endpoint.address,
@@ -230,6 +302,7 @@ class BandHRCollector:
                 details={"address": endpoint.address, "name": endpoint.name},
             )
             self._set_connected(endpoint_name=endpoint.name, endpoint_address=endpoint.address)
+            self._set_session_status("connected")
             LOG.info("connected to %s (%s)", endpoint.name, endpoint.address)
 
             characteristics = {
@@ -271,7 +344,9 @@ class BandHRCollector:
                     LOG.warning("no HR packets for %.1fs; reconnecting", self.config.stale_timeout)
                     break
                 try:
-                    await asyncio.wait_for(disconnected.wait(), timeout=1.0)
+                    await asyncio.wait_for(
+                        disconnected.wait(), timeout=self.config.poll_interval
+                    )
                 except TimeoutError:
                     continue
                 reason = "disconnected"
@@ -286,15 +361,40 @@ class BandHRCollector:
                 await client.disconnect()
             except Exception:  # noqa: BLE001, S110 - best effort
                 pass
+            # Verify at the BlueZ level; a failed/ignored disconnect leaves the
+            # band connected, and a connected peripheral stops advertising.
+            try:
+                if await asyncio.to_thread(_disconnect_bluez_device, endpoint.address):
+                    self.db.add_event(
+                        "stale_link_cleared",
+                        session_id=self._session_id,
+                        details={
+                            "addresses": [endpoint.address],
+                            "phase": "after_disconnect",
+                        },
+                    )
+            except Exception:  # cleanup must not mask the result
+                LOG.debug("post-disconnect cleanup failed", exc_info=True)
         duration = time.monotonic() - started
         return ConnectionResult(
             reason=reason, duration=duration, packets=self._session_packets - start_packets
         )
 
     async def _find_endpoint(self):
+        # A stale BlueZ link suppresses advertising, so release it first.
+        await asyncio.to_thread(self._clear_stale_links)
+        endpoint = await self._scan_endpoint()
+        if endpoint is not None:
+            return endpoint
+        # The link may have been re-established by another client during the
+        # scan; if cleanup found one, give the band one more chance to appear.
+        if await asyncio.to_thread(self._clear_stale_links):
+            endpoint = await self._scan_endpoint()
+        return endpoint
+
+    async def _scan_endpoint(self):
         try:
-            endpoint = await find_endpoint(
-                endpoint="hr_broadcast",
+            hr_endpoint, normal_endpoint = await find_endpoints(
                 timeout=self.config.scan_timeout,
                 address=self.config.address,
             )
@@ -309,16 +409,38 @@ class BandHRCollector:
                 )
             LOG.warning("BLE scan failed: %s", exc)
             return None
-        if endpoint is None:
-            self.state.update(adapter_available=True)
-            if time.time() - self._last_scan_event > 120:
-                self._last_scan_event = time.time()
+        if hr_endpoint is not None:
+            self.state.update(
+                adapter_available=True,
+                band_visible=True,
+                hr_broadcast_active=True,
+            )
+            return hr_endpoint
+
+        self.state.update(
+            adapter_available=True,
+            band_visible=normal_endpoint is not None,
+            hr_broadcast_active=False if normal_endpoint is not None else None,
+        )
+        if time.time() - self._last_scan_event > 120:
+            self._last_scan_event = time.time()
+            if normal_endpoint is not None:
+                self.db.add_event(
+                    "hr_broadcast_off",
+                    session_id=self._session_id,
+                    details={
+                        "message": "normal endpoint visible; HR Data Broadcast is off",
+                        "address": normal_endpoint.address,
+                        "name": normal_endpoint.name,
+                    },
+                )
+            else:
                 self.db.add_event(
                     "scan_miss",
                     session_id=self._session_id,
                     details={"message": "HR broadcast endpoint not advertising"},
                 )
-        return endpoint
+        return None
 
     # --- lifecycle ---------------------------------------------------------
     async def run(self) -> None:
@@ -346,18 +468,31 @@ class BandHRCollector:
         try:
             while not self._stop.is_set():
                 control = self._control()
+                if control.force_reconnect != self._last_force_seen:
+                    # A reconnect/start request cancels the current backoff.
+                    self._last_force_seen = control.force_reconnect
+                    self._failures = 0
+                    self.state.update(consecutive_failures=0, next_retry_at=None)
                 if control.paused:
-                    self.state.update(connection_status="paused", paused=True, force=True)
+                    self.state.update(
+                        connection_status="paused",
+                        paused=True,
+                        next_retry_at=None,
+                        current_hr=None,
+                        current_hr_at=None,
+                        force=True,
+                    )
+                    self._set_session_status("paused")
                     if not self._paused_event_logged:
                         self.db.add_event("monitoring_paused", session_id=self._session_id)
                         self._paused_event_logged = True
-                    await self._sleep(1.0)
+                    await self._sleep(config.poll_interval)
                     continue
                 if self._paused_event_logged:
                     self.db.add_event("monitoring_resumed", session_id=self._session_id)
                     self._paused_event_logged = False
                 self.state.update(paused=False, force=True)
-                self.db.set_session_status(self._session_id, "active")
+                self._set_session_status("active")
                 self._drain_spool_if_due()
                 self._failures += 1
                 self._attempts += 1
@@ -365,6 +500,7 @@ class BandHRCollector:
                     reconnect_attempts=self._attempts,
                     consecutive_failures=self._failures,
                     connection_status="scanning",
+                    next_retry_at=None,
                     force=True,
                 )
                 try:
@@ -381,6 +517,8 @@ class BandHRCollector:
 
                 if self._stop.is_set():
                     break
+                if result is not None and result.reason == "paused":
+                    continue
 
                 now = time.time()
                 self.state.update(
@@ -391,9 +529,9 @@ class BandHRCollector:
                     force=True,
                 )
                 if result is not None:
-                    if result.reason not in ("paused", "reconnect_requested"):
+                    if result.reason != "reconnect_requested":
                         self._disconnects += 1
-                    self.db.set_session_status(self._session_id, "disconnected")
+                    self._set_session_status("disconnected")
                     self.db.add_event(
                         "disconnected",
                         session_id=self._session_id,
@@ -424,8 +562,11 @@ class BandHRCollector:
                 delay = self._backoff_seconds()
                 self.state.update(next_retry_at=time.time() + delay, force=True)
                 LOG.info("reconnecting in %.1fs", delay)
-                if not await self._sleep(delay):
+                outcome = await self._wait_for_retry(delay)
+                if outcome == "stop":
                     break
+                if outcome == "retry":
+                    LOG.info("retry requested; reconnecting immediately")
         finally:
             self.db.end_session(
                 self._session_id,
@@ -452,6 +593,30 @@ class BandHRCollector:
                 "spool_drained", session_id=self._session_id, details={"count": drained}
             )
 
+    async def _wait_for_retry(self, seconds: float) -> str:
+        """Wait for the backoff, but wake for stop, pause, or a new request."""
+        deadline = time.monotonic() + seconds
+        while not self._stop.is_set():
+            control = self._control()
+            if control.paused:
+                return "paused"
+            if control.force_reconnect != self._last_force_seen:
+                self._last_force_seen = control.force_reconnect
+                self._failures = 0
+                self.state.update(consecutive_failures=0, next_retry_at=None, force=True)
+                return "retry"
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return "timeout"
+            try:
+                await asyncio.wait_for(
+                    self._stop.wait(), timeout=min(0.25, remaining)
+                )
+                return "stop"
+            except TimeoutError:
+                continue
+        return "stop"
+
     async def _sleep(self, seconds: float) -> bool:
         try:
             await asyncio.wait_for(self._stop.wait(), timeout=seconds)
@@ -460,21 +625,66 @@ class BandHRCollector:
             return True
 
 
-def _remove_bluez_cache(address: str) -> None:
-    """Remove a stale BlueZ device record so the next scan is authoritative."""
-
+def _bluetoothctl(*args: str, timeout: float = 8.0) -> subprocess.CompletedProcess[str] | None:
     executable = shutil.which("bluetoothctl") or "/usr/bin/bluetoothctl"
     try:
-        subprocess.run(
-            [executable, "remove", address],
+        return subprocess.run(
+            [executable, *args],
             capture_output=True,
             text=True,
-            timeout=8,
+            timeout=timeout,
             check=False,
         )
-        LOG.info("removed stale BlueZ device %s", address)
     except (OSError, subprocess.TimeoutExpired):
-        LOG.warning("could not remove stale BlueZ device %s", address, exc_info=True)
+        LOG.warning("bluetoothctl %s failed", " ".join(args), exc_info=True)
+        return None
+
+
+def _bluez_devices() -> list[tuple[str, str]]:
+    """Return ``(address, name)`` for devices cached by BlueZ."""
+    result = _bluetoothctl("devices")
+    if result is None:
+        return []
+    devices: list[tuple[str, str]] = []
+    for line in _ANSI_RE.sub("", result.stdout).splitlines():
+        parts = line.strip().split(maxsplit=2)
+        if len(parts) >= 2 and parts[0] == "Device":
+            devices.append((parts[1], parts[2] if len(parts) > 2 else ""))
+    return devices
+
+
+def _bluez_connected(address: str) -> bool:
+    result = _bluetoothctl("info", address)
+    if result is None:
+        return False
+    for line in _ANSI_RE.sub("", result.stdout).splitlines():
+        if line.strip().lower() == "connected: yes":
+            return True
+    return False
+
+
+def _disconnect_bluez_device(address: str) -> bool:
+    """Disconnect ``address`` if BlueZ currently holds a link to it."""
+    if not _bluez_connected(address):
+        return False
+    result = _bluetoothctl("disconnect", address)
+    if result is None:
+        return False
+    if "successful" in _ANSI_RE.sub("", result.stdout).lower() or not _bluez_connected(
+        address
+    ):
+        LOG.warning("released stale BlueZ link to %s", address)
+        return True
+    LOG.warning("BlueZ did not release %s", address)
+    return False
+
+
+def _remove_bluez_cache(address: str) -> None:
+    """Remove a stale BlueZ device record so the next scan is authoritative."""
+    if _bluetoothctl("remove", address) is not None:
+        LOG.info("removed stale BlueZ device %s", address)
+    else:
+        LOG.warning("could not remove stale BlueZ device %s", address)
 
 
 __all__ = ["HRS_CHAR", "HRS_SERVICE", "BandHRCollector", "CollectorConfig", "ConnectionResult"]

@@ -156,6 +156,49 @@ async def find_endpoint(
     return None
 
 
+async def find_endpoints(
+    *, timeout: float = 15.0, address: str | None = None
+) -> tuple[Advertisement | None, Advertisement | None]:
+    """Scan once and return the HR and normal endpoints if present.
+
+    Stops as soon as the HR endpoint is seen (fast reconnect). If it is not
+    seen, the scan runs for the full timeout so a sparse normal-endpoint
+    advertisement can still be used to distinguish "band is off" from
+    "band is on but HR Data Broadcast is off".
+
+    When HR Data Broadcast is active the band advertises the ``HR-`` endpoint
+    and the normal endpoint disappears. Seeing the normal endpoint is therefore
+    positive evidence that the band is nearby and powered on but not
+    broadcasting heart rate.
+    """
+    hr_endpoint: Advertisement | None = None
+    normal_endpoint: Advertisement | None = None
+    hr_seen = asyncio.Event()
+
+    def callback(device: BLEDevice, adv: AdvertisementData) -> None:
+        nonlocal hr_endpoint, normal_endpoint
+        record = _from_bleak(device, adv)
+        if address and record.address.upper() != address.upper():
+            return
+        if record.is_hr_broadcast:
+            if hr_endpoint is None:
+                hr_endpoint = record
+                hr_seen.set()
+        elif record.is_normal_endpoint and normal_endpoint is None:
+            normal_endpoint = record
+
+    scanner = BleakScanner(detection_callback=callback)
+    await scanner.start()
+    try:
+        try:
+            await asyncio.wait_for(hr_seen.wait(), timeout=max(1.0, timeout))
+        except TimeoutError:
+            pass
+    finally:
+        await scanner.stop()
+    return hr_endpoint, normal_endpoint
+
+
 async def resolve_device(address: str, timeout: float = 15.0) -> BLEDevice | None:
     """Resolve an address to a BLEDevice, preferring a fresh advertisement."""
     return await BleakScanner.find_device_by_address(address, timeout=timeout)

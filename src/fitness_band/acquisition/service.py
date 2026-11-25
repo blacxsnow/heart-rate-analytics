@@ -16,7 +16,7 @@ from ..database import AcquisitionDB
 from .collector import BandHRCollector, CollectorConfig
 from .simulation import SimulatedCollector
 from .spool import SpoolQueue
-from .state import StateWriter
+from .state import StateWriter, read_state
 
 LOG = logging.getLogger("band9.acquisition")
 
@@ -78,6 +78,7 @@ def main(argv: list[str] | None = None) -> int:
             "recovered_sessions": recovered,
         },
     )
+    previous_state = read_state(args.state)
     state = StateWriter(args.state, min_interval=0.4)
     state.update(
         force=True,
@@ -85,7 +86,7 @@ def main(argv: list[str] | None = None) -> int:
         connection_status="disconnected",
         adapter_available=None,
         started_at=time.time(),
-        device_id=args.address,
+        device_id=args.address or previous_state.get("device_id"),
     )
     spool = SpoolQueue(args.spool)
 

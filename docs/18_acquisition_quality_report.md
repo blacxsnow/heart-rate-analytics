@@ -30,16 +30,21 @@ unit was killed and restarted.
 
 | Test | Result |
 |---|---|
-| Unit/integration suite | **72 passed** |
+| Unit/integration suite | **81 passed** |
+| Reconnect state machine | 9 fake-BLE tests: link drop, manual reconnect, backoff cancellation, pause/resume, stale watchdog, missing endpoint, stale BlueZ link, cache removal, broadcast-off classification |
 | Simulated 60 s acquisition | 72 measurements at ~0.5 s; DB/session/events/state written |
 | Live dashboard API | status, HR points, CSV export, annotations all returned successfully |
 | Sleep annotation | created, listed and deleted; end-before-start normalised to next day |
 | Control file | start/stop/reconnect actions persisted atomically |
-| Process crash | `SIGKILL` → systemd restarted in ~5 s; old session marked `interrupted`; new session started |
-| Web independence | dashboard stayed active across the acquisition restart |
+| Reconnect during 2 s backoff | new attempt in **0.21 s** (previously waited for the full backoff) |
+| Pause / resume | paused in **1.11 s**, zero retries while paused, resumed in **0.96 s** with backoff reset to 2 s |
+| Process crash | `SIGKILL` → systemd restarted; old session marked `interrupted`; new session started |
+| Web independence | acquisition PID unchanged across a web restart |
 | Empty real DB analysis | `band9-analyze` completed and produced a “no data” report |
+| Timestamps | dashboard, chart axis and annotation input use explicit `Asia/Kolkata` (IST), independent of the browser timezone |
 | Real reboot | **not performed** — requires a host reboot at a convenient time |
-| Real BLE acquisition | **17 samples at ~0.99 s**, then the band stopped advertising; service retry path verified |
+| Real BLE acquisition | **17 samples at ~0.99 s** earlier; later scans found the normal endpoint but no HR endpoint (broadcast off) |
+
 
 ## 3. Simulation quality report
 
@@ -93,6 +98,28 @@ endpoint and BlueZ could not find the cached address. The band was not
 advertising; the service kept retrying. The current blocked condition is
 therefore band-side (broadcast off / power), not a web or database failure.
 
+### 4.1 Root cause of the “will not reconnect” loop
+
+BlueZ still reported the HR endpoint as `Connected: yes` after the daemon had
+disconnected. A connected LE peripheral does not advertise, so every scan
+missed it, and the old cleanup only ran after a failed **connect** — which
+could never be reached. A manual `bluetoothctl disconnect` immediately made the
+band advertise again at -68 dBm with service `0x180D`.
+
+The daemon now releases stale `HUAWEI Band HR-*` links before every scan,
+removes the cache entry if the release is refused, verifies the link after
+every disconnect, and re-scans. It also treats the normal endpoint as positive
+evidence that the band is on while HR Data Broadcast is off, and the dashboard
+shows that instruction instead of a generic connection error.
+
+### 4.2 Time zone display
+
+All dashboard timestamps, chart labels, annotation times and retry times are
+rendered explicitly in `Asia/Kolkata` (IST, UTC+05:30), independent of the
+browser or host time zone. Annotation `datetime-local` values are interpreted
+as IST and converted to UTC before storage.
+
+
 ## 5. Reproduce
 
 ```bash
@@ -110,10 +137,10 @@ BAND9_DATA_DIR="$PWD/data/demo" \
 ## 6. What remains
 
 1. Wake the band and start HR Data Broadcast again (battery was 16%).
-2. Confirm the daemon reports `connected`, ~1 s sampling and no contact-loss
-   flags; the dashboard hint should disappear.
+2. Confirm the daemon reports `connected`, ~1 s sampling, `band_visible=true`
+   and `hr_broadcast_active=true`; the dashboard hint should disappear.
 3. Add the first manual sleep annotations.
-4. Run the controlled A/B/C experiment in `17_acquisition_system.md` §9.
+4. Run the controlled A/B/C experiment in `17_acquisition_system.md` §10.
 5. Reboot the host once and verify the daemon resumes automatically (the only
    validation item not yet exercised).
 6. After 28 days, generate the baseline report and review the daily/rolling

@@ -27,6 +27,8 @@ DEFAULT_STATE: dict[str, Any] = {
     "sampling_interval_s": None,
     "expected_sampling_interval_s": None,
     "adapter_available": None,
+    "band_visible": None,
+    "hr_broadcast_active": None,
     "last_error": None,
     "device_id": None,
     "device_name": None,

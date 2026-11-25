@@ -173,6 +173,51 @@ The daemon removes a stale BlueZ cache entry after `Device not found` /
 `br-connection-canceled` and rescans, so a rotated HR-broadcast address is
 picked up on the next attempt.
 
+### BlueZ/Blueman says the band is “Connected” but scans find nothing
+
+A connected LE peripheral stops advertising. If a previous link was not torn
+down (daemon killed, BlueZ quirk, another Bluetooth client), BlueZ can keep
+`Connected: yes` for the HR endpoint indefinitely. Every scan then misses the
+band, and a connect attempt returns `Device not found` — a self-perpetuating
+loop. The old cleanup only ran **after a failed connect**, which could never
+happen because the scan failed first.
+
+The daemon now:
+
+- finds cached devices named `HUAWEI Band HR-*`,
+- disconnects any that BlueZ still reports as connected **before every scan**,
+- removes the cache record if the disconnect is refused,
+- verifies and releases the link again after every disconnect,
+- records `stale_link_cleared` and rescans immediately.
+
+Manual check and fix:
+
+```bash
+bluetoothctl info <HR-address> | grep -E 'Name|Connected'
+bluetoothctl disconnect <HR-address>
+```
+
+After the disconnect the band advertises again. This was confirmed on the
+sample unit: the HR endpoint immediately returned at -68 dBm and advertised
+`0x180D`.
+
+### The band is on, but HR Data Broadcast is off
+
+Seeing the normal endpoint (`HUAWEI Band 9-...` / `HUAWEI Band 10-...`) while
+no `HUAWEI Band HR-...` endpoint is present means the band is powered and
+nearby, but **HR Data Broadcast is not active**. The two identities are
+mutually exclusive: when broadcast is active the normal endpoint is no longer
+advertised.
+
+When this is detected the daemon records `hr_broadcast_off`, sets
+`band_visible=true` and `hr_broadcast_active=false`, and the dashboard shows:
+
+> Band is nearby, but HR Data Broadcast is OFF. On the band:
+> Settings → HR Data Broadcasts → start.
+
+There is no standard BLE command to start this mode from the host; it is a
+band-side setting. A restart/charge can leave the band on with broadcast off.
+
 ### Dashboard “Disconnect” versus “Stop acquisition”
 
 Both write `paused=true`; the daemon releases the BLE link and stops retrying.

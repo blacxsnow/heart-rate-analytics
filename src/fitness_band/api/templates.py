@@ -77,8 +77,10 @@ DASHBOARD_HTML = r"""<!doctype html>
   <div>
     <h1>Huawei Band 9 · Acquisition</h1>
     <div class="muted" id="service-line">service starting…</div>
+    <div class="muted" style="font-size:12px">All timestamps: Asia/Kolkata (IST, UTC+05:30)</div>
   </div>
   <div class="row">
+    <span class="muted" id="clock">— IST</span>
     <button id="export">Export CSV</button>
     <button id="restart" class="danger">Restart service</button>
   </div>
@@ -154,11 +156,28 @@ let disconnects = [];
 let annotationCache = [];
 let editingId = null;
 
-function fmtTime(iso) {
-  if (!iso) return '—';
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return iso;
-  return d.toLocaleString([], { month:'short', day:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit' });
+const TZ = 'Asia/Kolkata';
+const TZ_OFFSET_MS = 330 * 60 * 1000; // IST is UTC+05:30 with no DST.
+
+function fmtTime(value) {
+  if (value == null || value === '') return '—';
+  const d = value instanceof Date ? value : new Date(value);
+  if (isNaN(d.getTime())) return String(value);
+  return d.toLocaleString('en-IN', {
+    timeZone: TZ, day:'2-digit', month:'short', year:'numeric',
+    hour:'2-digit', minute:'2-digit', second:'2-digit', hourCycle:'h23'
+  }) + ' IST';
+}
+function fmtEpoch(seconds) {
+  return seconds ? fmtTime(new Date(seconds * 1000)) : '—';
+}
+function fmtClockTime(ms) {
+  return new Date(ms).toLocaleTimeString('en-IN', {
+    timeZone: TZ, hour:'2-digit', minute:'2-digit', hourCycle:'h23'
+  });
+}
+function tickClock() {
+  $('clock').textContent = `${fmtClockTime(Date.now())} IST`;
 }
 function fmtDuration(seconds) {
   if (seconds == null || isNaN(seconds)) return '—';
@@ -195,24 +214,34 @@ async function refreshStatus() {
     $('db-size').textContent = s.database ? `db ${fmtBytes(s.database.database_bytes)}` : 'database —';
     $('session').textContent = state.session_started_at ? fmtDuration(Date.now()/1000 - state.session_started_at) : '—';
     $('session-id').textContent = state.session_id ? `session ${state.session_id}` : 'session —';
-    $('last-conn').textContent = fmtTime(state.last_connection_at ? new Date(state.last_connection_at*1000).toISOString() : null);
-    $('last-disc').textContent = `last disconnect ${fmtTime(state.last_disconnection_at ? new Date(state.last_disconnection_at*1000).toISOString() : null)}`;
+    $('last-conn').textContent = fmtEpoch(state.last_connection_at);
+    $('last-disc').textContent = `last disconnect ${fmtEpoch(state.last_disconnection_at)}`;
     $('reconnects').textContent = state.reconnect_attempts || 0;
     $('spool').textContent = `spool ${s.spool_pending || 0}`;
-    $('adapter').textContent = state.adapter_available === false ? 'adapter unavailable' : 'adapter ' + (state.adapter_available === true ? 'ok' : '—');
+    const adapterBits = [];
+    adapterBits.push(state.adapter_available === false ? 'adapter unavailable' : 'adapter ' + (state.adapter_available === true ? 'ok' : '—'));
+    if (state.band_visible === true) adapterBits.push('band nearby');
+    if (state.hr_broadcast_active === true) adapterBits.push('HR broadcast on');
+    else if (state.hr_broadcast_active === false) adapterBits.push('HR broadcast OFF');
+    $('adapter').textContent = adapterBits.join(' · ');
     $('service-line').textContent = `service ${state.service_status || 'unknown'} · ${state.paused ? 'paused' : 'active'}${state.last_error ? ' · ' + state.last_error : ''}`;
+    let retry = '';
+    if (state.next_retry_at && state.next_retry_at * 1000 > Date.now()) {
+      retry = ` Next retry in ${Math.ceil((state.next_retry_at * 1000 - Date.now()) / 1000)} s at ${fmtClockTime(state.next_retry_at * 1000)} IST.`;
+    }
     let hint = '';
     if (state.connection_status === 'connected') {
       hint = '';
     } else if (state.paused) {
       hint = 'Acquisition is paused. Use Start/Connect to resume.';
+    } else if (state.hr_broadcast_active === false) {
+      hint = 'Band is nearby, but HR Data Broadcast is OFF. On the band: Settings → HR Data Broadcasts → start.' + retry;
+    } else if (state.band_visible === false) {
+      hint = 'HR broadcast endpoint not found. If the band is on, start Settings → HR Data Broadcasts on the band.' + retry;
     } else if (state.last_error) {
-      hint = `Not connected: ${state.last_error} — start HR Data Broadcast on the band; retrying automatically.`;
-      if (state.next_retry_at && state.next_retry_at * 1000 > Date.now()) {
-        hint += ` Next retry in ${Math.ceil((state.next_retry_at * 1000 - Date.now()) / 1000)} s.`;
-      }
+      hint = `Not connected: ${state.last_error}` + retry;
     } else {
-      hint = 'Waiting for the band HR broadcast endpoint…';
+      hint = 'Waiting for the band HR broadcast endpoint…' + retry;
     }
     $('hint').textContent = hint;
     const servicePill = state.service_status || 'unknown';
@@ -251,7 +280,7 @@ function drawChart() {
     const t = t0 + (now-t0)*(i/4);
     const xx = x(t);
     grid += `<line class="grid-line" x1="${xx}" y1="${mt}" x2="${xx}" y2="${h-mb}"></line>`;
-    grid += `<text class="grid-text" x="${xx+3}" y="${h-8}">${new Date(t).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</text>`;
+    grid += `<text class="grid-text" x="${xx+3}" y="${h-8}">${fmtClockTime(t)}</text>`;
   }
   $('grid').innerHTML = grid;
 
@@ -312,8 +341,8 @@ function renderAnnotations() {
       const item = annotationCache.find(a => String(a.annotation_id) === btn.dataset.edit);
       if (!item) return;
       editingId = item.annotation_id;
-      $('ann-start').value = toLocalInput(item.start_time);
-      $('ann-end').value = toLocalInput(item.end_time);
+      $('ann-start').value = toIstInput(item.start_time);
+      $('ann-end').value = toIstInput(item.end_time);
       $('ann-confidence').value = item.confidence == null ? 0.7 : item.confidence;
       $('ann-notes').value = item.notes || '';
       $('ann-submit').textContent = 'Update sleep period';
@@ -321,10 +350,15 @@ function renderAnnotations() {
     };
   });
 }
-function toLocalInput(iso) {
-  const d = new Date(iso);
+function toIstInput(iso) {
+  const d = new Date(new Date(iso).getTime() + TZ_OFFSET_MS);
   const pad = n => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth()+1)}-${pad(d.getUTCDate())}T${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
+}
+function istInputToDate(value) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(value || '');
+  if (!m) return new Date(NaN);
+  return new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]) - TZ_OFFSET_MS);
 }
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -340,9 +374,10 @@ async function control(action) {
 }
 $('ann-form').addEventListener('submit', async (ev) => {
   ev.preventDefault();
-  const start = new Date($('ann-start').value);
-  let end = new Date($('ann-end').value);
-  if (end <= start) end.setDate(end.getDate() + 1);
+  const start = istInputToDate($('ann-start').value);
+  let end = istInputToDate($('ann-end').value);
+  if (isNaN(start.getTime()) || isNaN(end.getTime())) { alert('Enter valid IST times'); return; }
+  if (end <= start) end = new Date(end.getTime() + 86400000);
   const body = {
     event_type: 'sleep',
     start_time: start.toISOString(),
@@ -373,10 +408,11 @@ document.querySelectorAll('[data-action]').forEach(btn => {
 });
 $('export').onclick = () => { window.location = '/api/export.csv'; };
 $('restart').onclick = () => control('restart');
-refreshStatus(); refreshHR(); refreshAnnotations();
+refreshStatus(); refreshHR(); refreshAnnotations(); tickClock();
 setInterval(refreshStatus, 2000);
 setInterval(refreshHR, 1000);
 setInterval(refreshAnnotations, 10000);
+setInterval(tickClock, 1000);
 </script>
 </body>
 </html>
