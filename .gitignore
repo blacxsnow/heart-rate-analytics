@@ -4,9 +4,19 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .ruff_cache/
+.coverage
+htmlcov/
 *.egg-info/
 build/
 dist/
+
+# Editor / OS noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.tmp
 
 # Local runtime data (may contain MAC addresses / raw personal data)
 data/

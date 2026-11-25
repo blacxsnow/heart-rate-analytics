@@ -3,7 +3,7 @@
 **Date:** 2026-11-26
 **Duration:** 600.2 s
 **Host:** Fedora, BlueZ, IMC Networks Bluetooth Radio (hci0)
-**Band:** Huawei Band 9 / `HUAWEI Band HR-TEST`, HR Data Broadcast active
+**Band:** Huawei Band 9 / `HUAWEI Band HR-<suffix>`, HR Data Broadcast active
 **Result:** **all injected faults recovered automatically; no manual service
 restart was required.**
 

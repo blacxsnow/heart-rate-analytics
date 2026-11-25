@@ -33,7 +33,7 @@ unit was killed and restarted.
 | Unit/integration suite | **107 passed** |
 | Reconnect state machine | Link drop, manual reconnect, backoff cancellation, pause/resume, stale watchdog, missing endpoint, stale BlueZ link, cache removal, broadcast-off classification |
 | Failure classification | Adapter powered off, adapter unavailable, stuck discovery → reset, reset control action, exception codes |
-| Advertisement classification | Live `HUAWEI Band 10-TEST` normal name, HR/normal separation, address filter |
+| Advertisement classification | Live `HUAWEI Band 10-<suffix>` normal name, HR/normal separation, address filter |
 | Endurance run | 10-minute scripted run: adapter power loss, pause/resume, `SIGKILL`, web restart, forced link drop, short adapter cycles — all recovered; see `19_endurance_test.md` |
 | Battery | No standard Battery Service on the HR/normal endpoints; vendor reads require auth. Manual battery log + drain rate added to the dashboard; see `20_battery_and_background_metrics.md` |
 | Simulated 60 s acquisition | 72 measurements at ~0.5 s; DB/session/events/state written |
@@ -118,7 +118,7 @@ shows that instruction instead of a generic connection error.
 
 ### 4.2 Normal-endpoint name mismatch
 
-The live normal endpoint advertises as **`HUAWEI Band 10-TEST`**, not the
+The live normal endpoint advertises as **`HUAWEI Band 10-<suffix>`**, not the
 `HUAWEI Band 9-...` form recorded during the first recon. The original name
 matcher accepted only `HUAWEI Band 9-`, so the daemon could not classify the
 band as nearby even while its normal endpoint was visible. The matcher now

@@ -1,0 +1,44 @@
+name: Feature request
+description: Suggest an acquisition, analysis, or documentation improvement
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please describe the problem and the smallest useful change. Do not
+        include personal health data, MAC addresses, device IDs, or keys.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or use case
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Acquisition / BLE
+        - Dashboard / API
+        - Analytics / statistics
+        - Documentation
+        - Packaging / deployment
+        - Other
+    validations:
+      required: true
+  - type: checkboxes
+    id: constraints
+    attributes:
+      label: Project constraints
+      options:
+        - label: The proposal is read-only with respect to raw acquisition records, unless explicitly justified.
+          required: true
+        - label: The proposal does not require firmware flashing, signature bypass, or credential extraction.
+          required: true

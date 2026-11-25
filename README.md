@@ -45,7 +45,8 @@ or service UUID; do not hard-code a MAC.
 Requirements: Linux, BlueZ, Python 3.11+, a powered Bluetooth adapter.
 
 ```bash
-conda activate band9          # or any Python 3.11+ env
+python -m venv .venv
+source .venv/bin/activate
 pip install -e '.[dev]'
 
 band9 doctor                        # adapter + endpoint check
@@ -81,7 +82,7 @@ the dashboard never stops acquisition.
 
 ```bash
 pip install -e '.[api,analysis]'
-PYTHON=/path/to/python \
+PYTHON="$(command -v python)" \
   bash services/install-user-services.sh
 ```
 
@@ -123,6 +124,10 @@ identifiers and personal physiological data.
 
 ```
 src/fitness_band/
+  acquisition/        HRS daemon, reconnect, sessions, state, spool
+  api/                read-only FastAPI dashboard + analytics API
+  analysis/           quality, baseline, sleep, distribution, bands,
+                      heatmap, rolling baselines, report CLI
   ble_scanner.py      discovery / advertisement records
   gatt_inspector.py   read-only GATT enumeration + notifications
   protocol.py         LPv2/Huawei frame + TLV codec
@@ -131,9 +136,11 @@ src/fitness_band/
   device_manager.py   endpoint resolution / connection helpers
   storage.py          SQLite + CSV/JSONL
   main.py             CLI
-docs/                 research, GATT, protocol, architecture, roadmap
+services/             systemd user units + installer
+capabilities/         machine-readable capability matrix
+docs/                 research, GATT, protocol, architecture, analytics
 captures/             sanitised reports; raw data stays local
-tests/                packet-decoding and storage tests
+tests/                protocol, acquisition, API and analytics tests
 ```
 
 ## Safety and privacy
@@ -145,6 +152,39 @@ tests/                packet-decoding and storage tests
 - Never commit MAC addresses, auth keys, serial numbers or raw personal data.
 - No claim of support is made for a command that has not been exercised against
   the physical device.
+- See `SECURITY.md` for private vulnerability reporting and the full data policy.
+
+## Public data policy
+
+Issues, pull requests, discussions, test fixtures and documentation must not
+contain MAC addresses, BLE identity addresses, serial numbers, device/account
+IDs, pairing or session keys, `secret_key`/`returnCodeMac` values, raw health
+records, or unredacted packet captures. Use synthetic addresses such as
+`AA:BB:CC:DD:EE:FF` and aggregate, non-identifying metrics.
+
+## Contributing
+
+See `CONTRIBUTING.md` for setup, tests, style, privacy and hardware-safety
+rules. The short version: run the test suite, keep analytics read-only with
+respect to acquisition records, and never add raw captures or personal data.
+
+## Security
+
+Please report vulnerabilities privately via GitHub's **Security → Report a
+vulnerability** flow. Do not open a public issue containing sensitive data.
+See `SECURITY.md`.
+
+## Medical disclaimer
+
+This is an independent interoperability and data-acquisition project, not a
+medical device. It is not affiliated with Huawei. Heart rate, sleep, SpO₂,
+HRV-related and other metrics are exploratory; they are not intended for
+diagnosis, treatment, or clinical decision-making. Use the software and any
+hardware experiments at your own risk.
+
+## License
+
+MIT. See `LICENSE`.
 
 ## References
 
