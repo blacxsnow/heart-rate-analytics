@@ -91,9 +91,11 @@ PYTHON=/path/to/python \
 - Analysis: `band9-analyze --db ~/.local/share/band9/acquisition.sqlite3 --out reports/analysis`
 
 The dashboard also includes a read-only **Statistical analytics** section:
-summary cards, an hourly table (with date + hour), a daily table, sortable
-columns and hourly HR drill-down. It uses the same database without changing
-acquisition or raw observations. See `docs/21_statistical_analytics.md`.
+summary cards; hourly and daily tables; HR distribution (histogram, ECDF, box,
+P05–P95 bands); configurable HR bands; sleep statistics from manual
+annotations; a circadian heatmap; and provisional rolling baselines. It uses the
+same database without changing acquisition or raw observations. See
+`docs/21_statistical_analytics.md`.
 
 Both units are enabled and lingering is enabled, so they start at boot without
 an interactive login. The daemon retries with exponential backoff until

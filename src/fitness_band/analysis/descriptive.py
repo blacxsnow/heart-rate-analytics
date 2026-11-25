@@ -368,6 +368,11 @@ def _sustained_extremes(group: pd.DataFrame) -> tuple[float | None, float | None
     return round(float(rolling.min()), 3), round(float(rolling.max()), 3)
 
 
+def sustained_extremes(group: pd.DataFrame) -> tuple[float | None, float | None]:
+    """Public alias for the rolling five-minute minimum/maximum."""
+    return _sustained_extremes(group)
+
+
 def _row_stats(group: pd.DataFrame) -> dict[str, Any]:
     stats = summary_stats(group["heart_rate_bpm"]) or {
         "count": 0,
@@ -639,5 +644,6 @@ __all__ = [
     "resolve_range",
     "summary_block",
     "summary_stats",
+    "sustained_extremes",
     "trajectory_points",
 ]

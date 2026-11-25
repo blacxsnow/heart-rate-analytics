@@ -6,6 +6,7 @@ DASHBOARD_HTML = r"""<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Band 9 Acquisition</title>
+<link rel="icon" href="data:,">
 <style>
   :root {
     --bg:#11161d; --panel:#1a222c; --panel2:#222c38; --text:#e7edf5;
@@ -194,6 +195,28 @@ DASHBOARD_HTML = r"""<!doctype html>
     .analytics [hidden] { display:none !important; }
     .analytics .traj { margin-top:14px; }
     .analytics .traj svg { height:240px; }
+    .analytics .charts {
+      display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr));
+      gap:12px; margin-bottom:8px;
+    }
+    .analytics .chart-card {
+      background:var(--panel); border:1px solid #263241; border-radius:10px;
+      padding:10px;
+    }
+    .analytics .chart-title { font-size:13px; font-weight:600; margin-bottom:6px; }
+    .analytics .chart-card svg, .analytics > svg {
+      width:100%; height:auto; background:#0d1218; border:1px solid #263241;
+      border-radius:10px; display:block;
+    }
+    .analytics .wide { min-width:320px; width:min(560px,70vw); }
+    .analytics .legend {
+      display:flex; gap:14px; flex-wrap:wrap; color:var(--muted);
+      font-size:12px; margin:8px 0;
+    }
+    .analytics .legend i {
+      display:inline-block; width:10px; height:10px; border-radius:2px;
+      margin-right:6px; vertical-align:-1px;
+    }
   </style>
 
   <section class="panel analytics" id="analytics">
@@ -237,6 +260,63 @@ DASHBOARD_HTML = r"""<!doctype html>
     <div class="table-wrap">
       <table id="analytics-daily"><tbody><tr><td class="empty">Loading…</td></tr></tbody></table>
     </div>
+
+    <h3>HR distribution</h3>
+    <div class="row" style="margin-bottom:8px">
+      <label class="inline">Bin width
+        <select id="analytics-bin-width">
+          <option value="2">2 bpm</option>
+          <option value="5" selected>5 bpm</option>
+          <option value="10">10 bpm</option>
+        </select>
+      </label>
+      <span class="muted">Histogram, ECDF, box plot and hourly P05–P95 bands.</span>
+    </div>
+    <div class="charts">
+      <div class="chart-card"><div class="chart-title">Histogram</div><svg id="analytics-histogram" viewBox="0 0 500 220"></svg></div>
+      <div class="chart-card"><div class="chart-title">ECDF</div><svg id="analytics-ecdf" viewBox="0 0 500 220"></svg></div>
+      <div class="chart-card"><div class="chart-title">Box plot</div><svg id="analytics-box" viewBox="0 0 500 220"></svg></div>
+      <div class="chart-card"><div class="chart-title">Hourly P05–P95</div><svg id="analytics-percentile" viewBox="0 0 500 220"></svg></div>
+    </div>
+    <div id="analytics-distribution-note" class="muted"></div>
+
+    <h3>HR bands</h3>
+    <div class="row" style="margin-bottom:8px">
+      <label class="inline">Intervals <input id="analytics-bands-input" class="wide" type="text"></label>
+      <button id="analytics-bands-apply">Apply</button>
+      <button id="analytics-bands-reset">Reset</button>
+      <span class="muted">Descriptive intervals only; not diagnostic or exercise-intensity labels.</span>
+    </div>
+    <div class="table-wrap"><table id="analytics-bands-table"></table></div>
+    <svg id="analytics-bands-chart" viewBox="0 0 1000 240"></svg>
+    <div id="analytics-bands-legend" class="legend"></div>
+
+    <h3>Sleep statistics</h3>
+    <div id="analytics-sleep-note" class="muted"></div>
+    <div class="table-wrap"><table id="analytics-sleep-table"></table></div>
+    <svg id="analytics-sleep-chart" viewBox="0 0 1000 240"></svg>
+    <div id="analytics-sleep-legend" class="legend"></div>
+
+    <h3>Circadian heatmap</h3>
+    <div class="row" style="margin-bottom:8px">
+      <label class="inline">Metric
+        <select id="analytics-heatmap-metric">
+          <option value="mean">Mean HR</option>
+          <option value="median">Median HR</option>
+          <option value="sd">SD</option>
+          <option value="mad">MAD</option>
+          <option value="p95">P95</option>
+        </select>
+      </label>
+      <span class="muted">Date × local hour; empty cells are not imputed.</span>
+    </div>
+    <svg id="analytics-heatmap" viewBox="0 0 1000 380"></svg>
+
+    <h3>Rolling baseline</h3>
+    <div class="cards" id="analytics-baseline-summary"></div>
+    <svg id="analytics-baseline-chart" viewBox="0 0 1000 260"></svg>
+    <div id="analytics-baseline-legend" class="legend"></div>
+    <div id="analytics-baseline-note" class="muted"></div>
 
     <div id="analytics-traj" class="traj" hidden>
       <div class="row between" style="margin-bottom:6px">
@@ -585,8 +665,12 @@ const A = {
   data: null,
   hourlySort: { key: 'hour_start_utc', dir: 'asc' },
   dailySort: { key: 'date', dir: 'desc' },
+  binWidth: 5,
+  bands: '',
+  heatmapMetric: 'mean',
   loading: false,
 };
+const DEFAULT_BANDS_TEXT = '<50,50-59,60-69,70-79,80-89,90-99,100-109,110-119,120+';
 
 function aNum(value, digits = 1) {
   if (value == null || Number.isNaN(Number(value))) return '—';
@@ -730,10 +814,432 @@ function aRenderSummary(data) {
   $a('analytics-warnings').textContent = warnings.join(' · ');
 }
 
+function aMessage(id, text) {
+  const svg = $a(id);
+  svg.innerHTML = `<text x="16" y="28" class="grid-text">${escapeHtml(text)}</text>`;
+}
+function aShortTime(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleString('en-IN', {
+    timeZone: TZ, day: '2-digit', month: 'short',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  });
+}
+function aShortDate(dateText) {
+  const d = new Date(`${dateText}T00:00:00+05:30`);
+  if (Number.isNaN(d.getTime())) return dateText;
+  return d.toLocaleDateString('en-IN', {
+    timeZone: TZ, day: '2-digit', month: 'short',
+  });
+}
+function aColor(t) {
+  const value = Math.max(0, Math.min(1, t));
+  const low = [38, 52, 78];
+  const high = [255, 122, 69];
+  const rgb = low.map((v, i) => Math.round(v + (high[i] - v) * value));
+  return `rgb(${rgb[0]},${rgb[1]},${rgb[2]})`;
+}
+function aGrid({ w, h, left, right, top, bottom, xMin, xMax, yMin, yMax, xTicks = 4, yTicks = 4, xLabel, yLabel }) {
+  const dx = w - left - right;
+  const dy = h - top - bottom;
+  let output = '';
+  for (let i = 0; i <= yTicks; i++) {
+    const value = yMin + (yMax - yMin) * (i / Math.max(1, yTicks));
+    const yy = top + dy * (1 - i / Math.max(1, yTicks));
+    output += `<line class="grid-line" x1="${left}" y1="${yy}" x2="${w - right}" y2="${yy}"></line>`;
+    output += `<text class="grid-text" x="4" y="${yy + 4}">${yLabel ? yLabel(value) : Math.round(value)}</text>`;
+  }
+  for (let i = 0; i <= xTicks; i++) {
+    const value = xMin + (xMax - xMin) * (i / Math.max(1, xTicks));
+    const xx = left + dx * (i / Math.max(1, xTicks));
+    output += `<line class="grid-line" x1="${xx}" y1="${top}" x2="${xx}" y2="${h - bottom}"></line>`;
+    output += `<text class="grid-text" x="${Math.min(xx + 3, w - right - 44)}" y="${h - 8}">${xLabel ? xLabel(value) : ''}</text>`;
+  }
+  return output;
+}
+function aPath(points, x, y, threshold) {
+  if (!points.length) return '';
+  let output = '';
+  let segment = '';
+  let previous = null;
+  for (const point of points) {
+    if (previous !== null && point.t - previous > threshold) {
+      output += segment;
+      segment = '';
+    }
+    segment += `${segment ? 'L' : 'M'}${x(point.t).toFixed(1)} ${y(point.v).toFixed(1)} `;
+    previous = point.t;
+  }
+  return output + segment;
+}
+
+function aRenderDistribution(data) {
+  const available = data && data.available;
+  const warnings = data && data.warnings ? data.warnings : [];
+  $a('analytics-distribution-note').textContent = available
+    ? `${data.ecdf.total} samples · ${warnings.join(' · ')}`
+    : 'No distribution data for this range.';
+
+  const hist = data && data.histogram;
+  if (!available || !hist || !hist.available || !hist.bins.length) {
+    aMessage('analytics-histogram', 'No histogram data.');
+  } else {
+    const w = 500, h = 220, left = 42, right = 8, top = 12, bottom = 26;
+    const bins = hist.bins;
+    const xMin = bins[0].start, xMax = bins[bins.length - 1].end;
+    const yMax = Math.max(1, ...bins.map(bin => bin.count));
+    const x = value => left + ((value - xMin) / Math.max(1, xMax - xMin)) * (w - left - right);
+    const y = count => top + (1 - count / yMax) * (h - top - bottom);
+    let content = aGrid({
+      w, h, left, right, top, bottom, xMin, xMax, yMin: 0, yMax,
+      xTicks: 5, yTicks: 4,
+      xLabel: value => Math.round(value),
+      yLabel: value => Math.round(value),
+    });
+    for (const bin of bins) {
+      const x1 = x(bin.start), x2 = x(bin.end);
+      const yy = y(bin.count);
+      content += `<rect x="${x1}" y="${yy}" width="${Math.max(1, x2 - x1 - 1)}" height="${h - bottom - yy}" fill="#ff7a45" opacity="0.82"><title>${bin.label}: ${bin.count}</title></rect>`;
+    }
+    $a('analytics-histogram').innerHTML = content;
+  }
+
+  const ecdfData = data && data.ecdf;
+  if (!available || !ecdfData || !ecdfData.available || !ecdfData.points.length) {
+    aMessage('analytics-ecdf', 'No ECDF data.');
+  } else {
+    const w = 500, h = 220, left = 42, right = 8, top = 12, bottom = 26;
+    const points = ecdfData.points;
+    const xMin = points[0].bpm, xMax = points[points.length - 1].bpm;
+    const x = value => left + ((value - xMin) / Math.max(1, xMax - xMin)) * (w - left - right);
+    const y = value => top + (1 - value) * (h - top - bottom);
+    let content = aGrid({
+      w, h, left, right, top, bottom, xMin, xMax, yMin: 0, yMax: 1,
+      xTicks: 5, yTicks: 4,
+      xLabel: value => Math.round(value),
+      yLabel: value => `${Math.round(value * 100)}%`,
+    });
+    let path = `M${x(points[0].bpm).toFixed(1)} ${y(0).toFixed(1)}`;
+    for (const point of points) {
+      path += `H${x(point.bpm).toFixed(1)} V${y(point.proportion).toFixed(1)}`;
+    }
+    content += `<path class="hr-line" d="${path}"></path>`;
+    $a('analytics-ecdf').innerHTML = content;
+  }
+
+  const box = data && data.box;
+  if (!available || !box) {
+    aMessage('analytics-box', 'No box statistics.');
+  } else {
+    const w = 500, h = 220, left = 42, right = 8, top = 34, bottom = 26;
+    const xMin = box.min, xMax = box.max;
+    const x = value => left + ((value - xMin) / Math.max(1, xMax - xMin)) * (w - left - right);
+    const center = top + (h - top - bottom) / 2;
+    let content = aGrid({
+      w, h, left, right, top, bottom, xMin, xMax, yMin: 0, yMax: 1,
+      xTicks: 5, yTicks: 0,
+      xLabel: value => Math.round(value),
+    });
+    content += `<line class="grid-line" x1="${x(box.whisker_low)}" y1="${center}" x2="${x(box.whisker_high)}" y2="${center}"></line>`;
+    content += `<line class="grid-line" x1="${x(box.whisker_low)}" y1="${center - 16}" x2="${x(box.whisker_low)}" y2="${center + 16}"></line>`;
+    content += `<line class="grid-line" x1="${x(box.whisker_high)}" y1="${center - 16}" x2="${x(box.whisker_high)}" y2="${center + 16}"></line>`;
+    content += `<rect x="${x(box.q1)}" y="${center - 30}" width="${Math.max(1, x(box.q3) - x(box.q1))}" height="60" fill="#2b3745" stroke="#ff7a45"></rect>`;
+    content += `<line x1="${x(box.median)}" y1="${center - 30}" x2="${x(box.median)}" y2="${center + 30}" stroke="#ff7a45" stroke-width="2"></line>`;
+    for (const outlier of box.outliers) {
+      content += `<circle cx="${x(outlier)}" cy="${center}" r="2.5" fill="#ff5d5d"></circle>`;
+    }
+    content += `<text class="grid-text" x="${left}" y="18">n=${box.count} · Q1 ${box.q1} · median ${box.median} · Q3 ${box.q3} · outliers ${box.outlier_count}</text>`;
+    $a('analytics-box').innerHTML = content;
+  }
+
+  const bands = data && data.percentile_bands;
+  if (!available || !bands || !bands.length) {
+    aMessage('analytics-percentile', 'No hourly percentile bands.');
+  } else {
+    const w = 500, h = 220, left = 42, right = 8, top = 12, bottom = 26;
+    const times = bands.map(row => new Date(row.timestamp_utc).getTime());
+    const xMin = Math.min(...times), xMax = Math.max(...times);
+    const values = bands.flatMap(row => [row.p05, row.p95]).filter(value => value != null);
+    const yMin = Math.min(...values) - 2, yMax = Math.max(...values) + 2;
+    const x = value => left + ((value - xMin) / Math.max(1, xMax - xMin)) * (w - left - right);
+    const y = value => top + (1 - (value - yMin) / Math.max(1, yMax - yMin)) * (h - top - bottom);
+    let content = aGrid({
+      w, h, left, right, top, bottom, xMin, xMax, yMin, yMax,
+      xTicks: 4, yTicks: 4,
+      xLabel: value => aClock(new Date(value).toISOString()),
+      yLabel: value => Math.round(value),
+    });
+    const topPoints = bands.map(row => ({ t: new Date(row.timestamp_utc).getTime(), v: row.p95 }));
+    const bottomPoints = bands.map(row => ({ t: new Date(row.timestamp_utc).getTime(), v: row.p05 })).reverse();
+    if (topPoints.length > 1) {
+      const area = `${aPath(topPoints, x, y, 1e15)}L${bottomPoints.map(point => `${x(point.t).toFixed(1)} ${y(point.v).toFixed(1)}`).join('L')}Z`;
+      content += `<path d="${area}" fill="rgba(255,122,69,0.16)" stroke="none"></path>`;
+    }
+    const medianPoints = bands.map(row => ({ t: new Date(row.timestamp_utc).getTime(), v: row.median }));
+    content += `<path class="hr-line" d="${aPath(medianPoints, x, y, 1e15)}"></path>`;
+    $a('analytics-percentile').innerHTML = content;
+  }
+}
+
+function aStaticTable(tableId, columns, rows, emptyText) {
+  const table = $a(tableId);
+  const head = '<thead><tr>' + columns.map(column => `<th>${column.label}</th>`).join('') + '</tr></thead>';
+  if (!rows.length) {
+    table.innerHTML = head + `<tbody><tr><td class="empty" colspan="${columns.length}">${emptyText || 'No data.'}</td></tr></tbody>`;
+    return;
+  }
+  table.innerHTML = head + '<tbody>' + rows.map(row => '<tr>' + columns.map(column => `<td>${column.render(row)}</td>`).join('') + '</tr>').join('') + '</tbody>';
+}
+
+const BAND_COLORS = ['#5b8ff9', '#61ddaa', '#f6bd16', '#ff9845', '#ff6b6b', '#b37feb', '#36cfc9', '#ffc069', '#9254de', '#597ef7'];
+
+function aRenderBands(data) {
+  const bands = data && data.bands ? data.bands : [];
+  aStaticTable('analytics-bands-table', [
+    { label: 'Interval', render: row => escapeHtml(row.label) },
+    { label: 'Duration', render: row => fmtDuration(row.duration_seconds) },
+    { label: '% monitored', render: row => `${aNum(row.percentage)}%` },
+    { label: 'Episodes', render: row => aInt(row.episodes) },
+    { label: 'Longest', render: row => fmtDuration(row.longest_episode_seconds) },
+  ], bands, 'No band data.');
+  $a('analytics-bands-legend').innerHTML = bands.map((band, index) =>
+    `<span><i style="background:${BAND_COLORS[index % BAND_COLORS.length]}"></i>${escapeHtml(band.label)}</span>`
+  ).join('');
+
+  if (!data || !data.available || !data.daily || !data.daily.length) {
+    aMessage('analytics-bands-chart', 'No daily band data.');
+    return;
+  }
+  const dates = data.daily.map(row => row.date);
+  const totals = data.daily.map(row => Object.values(row.values).reduce((sum, value) => sum + value, 0));
+  const maxHours = Math.max(0.1, ...totals.map(seconds => seconds / 3600));
+  const w = 1000, h = 240, left = 42, right = 8, top = 12, bottom = 26;
+  const xStep = (w - left - right) / Math.max(1, dates.length);
+  const barWidth = Math.max(4, xStep * 0.68);
+  const y = hours => top + (1 - hours / maxHours) * (h - top - bottom);
+  let content = aGrid({
+    w, h, left, right, top, bottom, xMin: 0, xMax: 1, yMin: 0, yMax: maxHours,
+    xTicks: 0, yTicks: 4, yLabel: value => `${aNum(value, 1)}h`,
+  });
+  const labelEvery = Math.max(1, Math.ceil(dates.length / 8));
+  data.daily.forEach((row, dateIndex) => {
+    const x = left + dateIndex * xStep + (xStep - barWidth) / 2;
+    let cumulative = 0;
+    bands.forEach((band, bandIndex) => {
+      const hours = (row.values[band.id] || 0) / 3600;
+      if (hours <= 0) return;
+      const yTop = y(cumulative + hours);
+      const height = Math.max(0.5, y(cumulative) - yTop);
+      content += `<rect x="${x}" y="${yTop}" width="${barWidth}" height="${height}" fill="${BAND_COLORS[bandIndex % BAND_COLORS.length]}"><title>${row.date} · ${band.label}: ${aNum(hours, 2)} h</title></rect>`;
+      cumulative += hours;
+    });
+    if (dateIndex % labelEvery === 0) {
+      content += `<text class="grid-text" x="${x}" y="${h - 8}">${aShortDate(row.date)}</text>`;
+    }
+  });
+  $a('analytics-bands-chart').innerHTML = content;
+}
+
+function aRenderSleep(data) {
+  const available = data && data.available;
+  const note = !available
+    ? (data && (data.reason || data.note)) || 'No sleep annotations.'
+    : `${data.nights_with_data}/${data.nights} annotated nights with data · ${(data.warnings || []).join(' · ')}`;
+  $a('analytics-sleep-note').textContent = note;
+
+  const history = data && data.history ? data.history : [];
+  aStaticTable('analytics-sleep-table', [
+    { label: 'Date', render: row => row.start_local ? row.start_local.slice(0, 10) : '—' },
+    { label: 'Start', render: row => aClock(row.start_utc) },
+    { label: 'End', render: row => aClock(row.end_utc) },
+    { label: 'Hours', render: row => aNum(row.duration_hours, 2) },
+    { label: 'Count', render: row => aInt(row.count) },
+    { label: 'Mean', render: row => aNum(row.mean) },
+    { label: 'Median', render: row => aNum(row.median) },
+    { label: 'Min', render: row => aInt(row.min) },
+    { label: 'Max', render: row => aInt(row.max) },
+    { label: 'SD', render: row => aNum(row.sd) },
+    { label: 'MAD', render: row => aNum(row.mad) },
+    { label: 'IQR', render: row => aNum(row.iqr) },
+    { label: 'P05', render: row => aNum(row.p05) },
+    { label: 'P95', render: row => aNum(row.p95) },
+    { label: '5m min', render: row => aNum(row.sustained_5min_min) },
+    { label: 'Nadir', render: row => aInt(row.nadir_bpm) },
+    { label: 'Nadir min', render: row => aNum(row.nadir_time_min) },
+    { label: 'Awake rest', render: row => aNum(row.awake_resting) },
+    { label: 'Δ vs awake', render: row => aNum(row.delta_vs_awake) },
+  ], history, 'No annotated nights with HR data.');
+
+  if (!available || !data.aligned || !data.aligned.length) {
+    $a('analytics-sleep-legend').innerHTML = '';
+    aMessage('analytics-sleep-chart', 'No sleep-aligned trajectory.');
+    return;
+  }
+  const w = 1000, h = 240, left = 42, right = 8, top = 12, bottom = 26;
+  const allPoints = data.aligned.flatMap(night => night.points.map(point => ({ t: point.minute, v: point.hr })));
+  if (!allPoints.length) {
+    aMessage('analytics-sleep-chart', 'No sleep HR points.');
+    return;
+  }
+  const xMin = 0, xMax = Math.max(1, ...allPoints.map(point => point.t));
+  const yMin = Math.min(...allPoints.map(point => point.v)) - 2;
+  const yMax = Math.max(...allPoints.map(point => point.v)) + 2;
+  const x = value => left + (value / Math.max(1, xMax)) * (w - left - right);
+  const y = value => top + (1 - (value - yMin) / Math.max(1, yMax - yMin)) * (h - top - bottom);
+  let content = aGrid({
+    w, h, left, right, top, bottom, xMin, xMax, yMin, yMax,
+    xTicks: 5, yTicks: 4,
+    xLabel: value => `${Math.round(value)}m`,
+    yLabel: value => Math.round(value),
+  });
+  for (const night of data.aligned) {
+    if (!night.points.length) continue;
+    const points = night.points.map(point => ({ t: point.minute, v: point.hr }));
+    content += `<path d="${aPath(points, x, y, 1e15)}" fill="none" stroke="#5b8ff9" stroke-width="1" opacity="0.22"></path>`;
+  }
+  const meanPoints = data.mean_trajectory.map(point => ({ t: point.minute, v: point.hr }));
+  content += `<path class="hr-line" d="${aPath(meanPoints, x, y, 1e15)}"></path>`;
+  $a('analytics-sleep-chart').innerHTML = content;
+  $a('analytics-sleep-legend').innerHTML = '<span><i style="background:#ff7a45"></i>Mean across nights</span><span><i style="background:#5b8ff9"></i>Individual nights</span>';
+}
+
+function aRenderHeatmap(data) {
+  if (!data || !data.available || !data.dates.length) {
+    aMessage('analytics-heatmap', 'No heatmap data.');
+    return;
+  }
+  const metric = A.heatmapMetric;
+  const values = data.cells.map(cell => cell[metric]).filter(value => value != null);
+  if (!values.length) {
+    aMessage('analytics-heatmap', `No ${metric} values.`);
+    return;
+  }
+  const minimum = Math.min(...values), maximum = Math.max(...values);
+  const span = Math.max(0.001, maximum - minimum);
+  const lookup = new Map(data.cells.map(cell => [`${cell.date}|${cell.hour}`, cell]));
+  const w = 1000, h = 380, left = 44, right = 8, top = 26, bottom = 28;
+  const cellW = (w - left - right) / Math.max(1, data.dates.length);
+  const cellH = (h - top - bottom) / 24;
+  let content = '';
+  const labelEveryDate = Math.max(1, Math.ceil(data.dates.length / 8));
+  data.dates.forEach((date, dateIndex) => {
+    if (dateIndex % labelEveryDate === 0) {
+      content += `<text class="grid-text" x="${left + dateIndex * cellW}" y="${h - 8}">${aShortDate(date)}</text>`;
+    }
+    for (let hour = 0; hour < 24; hour++) {
+      const cell = lookup.get(`${date}|${hour}`);
+      const value = cell ? cell[metric] : null;
+      const x = left + dateIndex * cellW;
+      const y = top + hour * cellH;
+      const fill = value == null ? '#151b23' : aColor((value - minimum) / span);
+      const title = cell ? `${date} ${String(hour).padStart(2, '0')}:00 · ${metric}=${aNum(value)} · n=${cell.count}` : `${date} ${String(hour).padStart(2, '0')}:00 · no data`;
+      content += `<rect x="${x}" y="${y}" width="${Math.max(1, cellW - 1)}" height="${Math.max(1, cellH - 1)}" fill="${fill}"><title>${escapeHtml(title)}</title></rect>`;
+    }
+  });
+  for (const hour of [0, 6, 12, 18, 23]) {
+    content += `<text class="grid-text" x="4" y="${top + hour * cellH + 10}">${String(hour).padStart(2, '0')}</text>`;
+  }
+  content += `<text class="grid-text" x="${left}" y="16">${metric.toUpperCase()} HR · dates × local hour · ${data.dates.length} days</text>`;
+  $a('analytics-heatmap').innerHTML = content;
+}
+
+function aRenderBaseline(data) {
+  if (!data || !data.available) {
+    $a('analytics-baseline-summary').innerHTML = aCard('Baseline', '—', 'No data for this range.');
+    $a('analytics-baseline-legend').innerHTML = '';
+    aMessage('analytics-baseline-chart', 'No rolling baseline data.');
+    $a('analytics-baseline-note').textContent = data && data.warnings ? data.warnings.join(' · ') : '';
+    return;
+  }
+  const baselines = data.baselines || {};
+  const series = data.series || [];
+  const latest = key => {
+    for (let index = series.length - 1; index >= 0; index--) {
+      if (series[index][key] != null) return series[index][key];
+    }
+    return null;
+  };
+  const cards = [
+    aCard('Resting proxy', baselines.resting ? `${aNum(baselines.resting.bpm)} bpm` : '—', baselines.resting ? baselines.resting.method : 'unavailable'),
+    aCard('Sleep baseline', baselines.sleep ? `${aNum(baselines.sleep.bpm)} bpm` : '—', baselines.sleep ? `${baselines.sleep.nights} nights` : 'no sleep annotations'),
+    aCard('Overall median', aNum(baselines.overall ? baselines.overall.median : null), 'provisional'),
+    aCard('MAD', aNum(baselines.overall ? baselines.overall.mad : null), 'robust spread'),
+    aCard('Days', aInt(baselines.days), baselines.provisional ? 'provisional' : 'baseline'),
+    aCard('Trend', data.trend ? `${aNum(data.trend.slope_bpm_per_day, 2)} bpm/day` : '—', data.trend ? `OLS, R²=${aNum(data.trend.r2, 2)}` : 'needs ≥2 days'),
+  ];
+  for (const window of ['1h', '6h', '24h', '7d', '28d']) {
+    const mean = latest(`mean_${window}`);
+    const median = latest(`median_${window}`);
+    cards.push(aCard(`${window} rolling`, `${aNum(mean)} / ${aNum(median)}`, 'mean / median'));
+  }
+  $a('analytics-baseline-summary').innerHTML = cards.join('');
+  $a('analytics-baseline-note').textContent = `${(data.warnings || []).join(' · ')}${baselines.note ? ' · ' + baselines.note : ''}`;
+
+  if (!series.length) {
+    $a('analytics-baseline-legend').innerHTML = '';
+    aMessage('analytics-baseline-chart', 'Rolling windows are not populated yet.');
+    return;
+  }
+  const w = 1000, h = 260, left = 42, right = 8, top = 12, bottom = 26;
+  const times = series.map(row => new Date(row.timestamp_utc).getTime());
+  const xMin = Math.min(...times), xMax = Math.max(...times);
+  const allValues = [];
+  for (const row of series) {
+    for (const key of ['mean_1h', 'mean_6h', 'mean_24h', 'mean_7d', 'mean_28d']) {
+      if (row[key] != null) allValues.push(row[key]);
+    }
+  }
+  if (!allValues.length) {
+    aMessage('analytics-baseline-chart', 'Rolling windows are not populated yet.');
+    return;
+  }
+  const yMin = Math.min(...allValues) - 2, yMax = Math.max(...allValues) + 2;
+  const x = value => left + ((value - xMin) / Math.max(1, xMax - xMin)) * (w - left - right);
+  const y = value => top + (1 - (value - yMin) / Math.max(1, yMax - yMin)) * (h - top - bottom);
+  let content = aGrid({
+    w, h, left, right, top, bottom, xMin, xMax, yMin, yMax,
+    xTicks: 4, yTicks: 4,
+    xLabel: value => aShortTime(new Date(value).toISOString()),
+    yLabel: value => Math.round(value),
+  });
+  const windows = [
+    ['mean_1h', '#ff7a45'], ['mean_6h', '#f6bd16'], ['mean_24h', '#61ddaa'],
+    ['mean_7d', '#5b8ff9'], ['mean_28d', '#b37feb'],
+  ];
+  for (const [key, color] of windows) {
+    const points = series
+      .filter(row => row[key] != null)
+      .map(row => ({ t: new Date(row.timestamp_utc).getTime(), v: row[key] }));
+    if (points.length) {
+      content += `<path d="${aPath(points, x, y, 2 * 3600 * 1000)}" fill="none" stroke="${color}" stroke-width="2" opacity="0.9"></path>`;
+    }
+  }
+  if (baselines.resting && baselines.resting.bpm != null) {
+    const yy = y(baselines.resting.bpm);
+    content += `<line x1="${left}" y1="${yy}" x2="${w - right}" y2="${yy}" stroke="#8fa0b3" stroke-dasharray="5 4" stroke-width="1"></line>`;
+  }
+  $a('analytics-baseline-chart').innerHTML = content;
+  $a('analytics-baseline-legend').innerHTML = [
+    '<span><i style="background:#ff7a45"></i>1 h mean</span>',
+    '<span><i style="background:#f6bd16"></i>6 h mean</span>',
+    '<span><i style="background:#61ddaa"></i>24 h mean</span>',
+    '<span><i style="background:#5b8ff9"></i>7 d mean</span>',
+    '<span><i style="background:#b37feb"></i>28 d mean</span>',
+    '<span><i style="background:#8fa0b3"></i>Resting proxy</span>',
+  ].join('');
+}
+
 function aRender(data) {
   A.data = data;
   aRenderSummary(data);
   aRenderTables();
+  aRenderDistribution(data.distribution);
+  aRenderBands(data.bands);
+  aRenderSleep(data.sleep);
+  aRenderHeatmap(data.heatmap);
+  aRenderBaseline(data.baseline);
 }
 
 async function aRefresh() {
@@ -741,7 +1247,8 @@ async function aRefresh() {
   A.loading = true;
   $a('analytics-refresh').disabled = true;
   try {
-    const params = new URLSearchParams({ range: A.range });
+    const params = new URLSearchParams({ range: A.range, bin_width: A.binWidth });
+    if (A.bands) params.set('bands', A.bands);
     if (A.range === 'custom') {
       const start = istInputToDate($a('analytics-start').value);
       const end = istInputToDate($a('analytics-end').value);
@@ -853,11 +1360,29 @@ $a('analytics-range').addEventListener('change', () => {
 $a('analytics-apply').onclick = () => aRefresh();
 $a('analytics-refresh').onclick = () => aRefresh();
 $a('analytics-traj-close').onclick = () => { $a('analytics-traj').hidden = true; };
+$a('analytics-bin-width').addEventListener('change', () => {
+  A.binWidth = parseFloat($a('analytics-bin-width').value) || 5;
+  aRefresh();
+});
+$a('analytics-bands-apply').onclick = () => {
+  A.bands = $a('analytics-bands-input').value.trim();
+  aRefresh();
+};
+$a('analytics-bands-reset').onclick = () => {
+  A.bands = '';
+  $a('analytics-bands-input').value = DEFAULT_BANDS_TEXT;
+  aRefresh();
+};
+$a('analytics-heatmap-metric').addEventListener('change', () => {
+  A.heatmapMetric = $a('analytics-heatmap-metric').value;
+  if (A.data) aRenderHeatmap(A.data.heatmap);
+});
 
 (function aInit() {
   const now = new Date();
   $a('analytics-start').value = toIstInput(new Date(now.getTime() - 24 * 3600 * 1000).toISOString());
   $a('analytics-end').value = toIstInput(now.toISOString());
+  $a('analytics-bands-input').value = DEFAULT_BANDS_TEXT;
   aRefresh();
   setInterval(aRefresh, 30000);
 })();

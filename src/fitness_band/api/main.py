@@ -25,6 +25,9 @@ from pydantic import BaseModel, Field
 from ..acquisition.control import apply_action
 from ..acquisition.spool import SpoolQueue
 from ..acquisition.state import read_state
+from ..analysis.baseline_rolling import baseline_report
+from ..analysis.circadian_heatmap import heatmap_report
+from ..analysis.data_loader import load_annotations
 from ..analysis.descriptive import (
     DEFAULT_TIMEZONE,
     daily_table,
@@ -36,6 +39,9 @@ from ..analysis.descriptive import (
     summary_block,
     trajectory_points,
 )
+from ..analysis.distribution import distribution_report
+from ..analysis.hr_bands import band_report, parse_bands
+from ..analysis.sleep_statistics import sleep_report
 from ..database import AcquisitionDB, iso_utc, parse_iso
 from ..paths import control_path as default_control_path
 from ..paths import db_path as default_db_path
@@ -234,6 +240,8 @@ def create_app(
         session_id: int | None = None,
         include_empty: bool | None = None,
         include_simulated: bool = False,
+        bin_width: float = Query(default=5.0, ge=1.0, le=50.0),
+        bands: str | None = None,
         tz_name: str = Query(default=DEFAULT_TIMEZONE, alias="tz"),
     ) -> dict[str, Any]:
         """Read-only descriptive statistics for the selected range."""
@@ -241,6 +249,10 @@ def create_app(
             tz = ZoneInfo(tz_name)
         except ZoneInfoNotFoundError as exc:
             raise HTTPException(status_code=400, detail="unknown timezone") from exc
+        try:
+            band_spec = parse_bands(bands)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
         path = db().path
         session = load_session_row(path, session_id=session_id)
@@ -283,13 +295,30 @@ def create_app(
         summary = summary_block(frame, resolved)
         if include_empty is None:
             include_empty = resolved["duration_seconds"] <= 48 * 3600
+        hourly = hourly_table(frame, resolved, tz=tz, include_empty=bool(include_empty))
+        daily = daily_table(frame, events, resolved, tz=tz)
+        annotations = load_annotations(path, local_tz=tz)
+        sleep = sleep_report(
+            frame,
+            annotations,
+            tz=tz,
+            start=resolved["start_utc"],
+            end=resolved["end_utc"],
+        )
         return {
             "range": resolved,
             "summary": summary,
-            "hourly": hourly_table(
-                frame, resolved, tz=tz, include_empty=bool(include_empty)
+            "hourly": hourly,
+            "daily": daily,
+            "distribution": distribution_report(
+                frame["heart_rate_bpm"], hourly, bin_width=bin_width
             ),
-            "daily": daily_table(frame, events, resolved, tz=tz),
+            "bands": band_report(frame, band_spec),
+            "sleep": sleep,
+            "heatmap": heatmap_report(frame, tz=tz),
+            "baseline": baseline_report(
+                frame, sleep.get("history", []), tz=tz
+            ),
             "warnings": summary["warnings"],
             "computed_at": iso_utc(),
         }

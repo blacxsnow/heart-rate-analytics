@@ -30,7 +30,7 @@ unit was killed and restarted.
 
 | Test | Result |
 |---|---|
-| Unit/integration suite | **93 passed** |
+| Unit/integration suite | **107 passed** |
 | Reconnect state machine | Link drop, manual reconnect, backoff cancellation, pause/resume, stale watchdog, missing endpoint, stale BlueZ link, cache removal, broadcast-off classification |
 | Failure classification | Adapter powered off, adapter unavailable, stuck discovery → reset, reset control action, exception codes |
 | Advertisement classification | Live `HUAWEI Band 10-TEST` normal name, HR/normal separation, address filter |

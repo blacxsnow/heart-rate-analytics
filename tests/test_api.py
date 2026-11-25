@@ -119,6 +119,45 @@ def test_analytics_endpoints(tmp_path) -> None:
         assert data["daily"]
         assert data["daily"][0]["count"] == 5
         assert any("Small sample" in warning for warning in data["warnings"])
+        assert data["distribution"]["available"] is True
+        assert data["bands"]["available"] is True
+        assert data["heatmap"]["available"] is True
+        assert data["baseline"]["available"] is True
+        assert data["sleep"]["available"] is False
+
+        response = client.get(
+            "/api/analytics",
+            params={"range": "1h", "bands": "50-59,60+"},
+        )
+        assert response.status_code == 200
+        assert [band["label"] for band in response.json()["bands"]["bands"]] == [
+            "50–59",
+            "60+",
+        ]
+        assert (
+            client.get(
+                "/api/analytics",
+                params={"range": "1h", "bands": "70-79,60-69"},
+            ).status_code
+            == 400
+        )
+
+        response = client.post(
+            "/api/annotations",
+            json={
+                "event_type": "sleep",
+                "start_time": iso_utc(time.time() - 10),
+                "end_time": iso_utc(time.time() + 1),
+                "confidence": 0.7,
+                "notes": "analytics test",
+            },
+        )
+        assert response.status_code == 201
+        response = client.get("/api/analytics", params={"range": "1h"})
+        sleep = response.json()["sleep"]
+        assert sleep["available"] is True
+        assert sleep["history"][0]["count"] == 5
+        assert sleep["aligned"][0]["points"]
 
         start = iso_utc(time.time() - 10)
         end = iso_utc(time.time() + 1)
