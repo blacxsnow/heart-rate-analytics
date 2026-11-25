@@ -22,7 +22,7 @@ Mapping of the original requested deliverables to concrete artifacts.
 | Protocol command/response spec | `docs/04_protocol_spec.md` §9, `docs/13_capture_results.md` | confirmed on device |
 | Historical data format spec | `0x07/0x0B`, `0x07/0x0D`, `0x2C/0x01` captured | partial; record decoding pending |
 | Measurement comparison | HRS live vs band; SpO₂ toggle | HRS done; SpO₂ data pending |
-| Firmware feasibility | `docs/08_firmware_investigation.md` | desk review done; no hardware work |
+| Firmware feasibility | `docs/08_firmware_investigation.md`, `docs/14_firmware_feasibility.md` | deep desk/hardware review done; low feasibility, no hardware write |
 
 ## Reproducible environment
 

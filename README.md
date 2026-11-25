@@ -22,7 +22,7 @@ implementation during reverse engineering.
 | Real-time HR via FE86 (`0x19`) | **Hypothesis** | Huawhoop/Band 10 evidence; not seen on Band 9 yet |
 | SpO₂, HRV, stress, sleep, steps | **Partial** | automatic SpO₂ on/off confirmed; data paths not yet decoded |
 | Configurable aggressive intervals | **Confirmed absent in Huawei Health** | on-device capture: only on/off and alert thresholds |
-| Firmware modification | **Out of scope for now** | see `docs/08_firmware_investigation.md` |
+| Firmware modification | **Low feasibility** | Apollo3 secure boot, signed OTA, glued case, no recovery; see `docs/14_firmware_feasibility.md` |
 
 > The minimum success criterion is already met: a locally running Python
 > application receives timestamped heart rate from the Band 9 with no Huawei

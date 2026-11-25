@@ -2,6 +2,17 @@
 
 **Status: not started physically. No firmware was read, modified or flashed.**
 
+> **Deep-inspection update (2026-11-25):** the SoC is an **Ambiq Apollo3 Blue
+> Plus (AMA3B)** with Secure Boot / Secure OTA / secure key storage; the case is
+> glued. Huawei Health's OTA path uses an authenticated `checkEx` cloud service,
+> SHA-256/MD5 package verification and device-side secure boot. No public Band 9
+> firmware or recovery image was found. Full assessment:
+> `14_firmware_feasibility.md`.
+>
+> **Conclusion:** firmware overhaul is a hardware-destruction experiment, not a
+> viable next step, unless Stage 1/2 inspection proves an unlocked target and a
+> recovery path. Continue at the software layer.
+
 This document exists to prevent premature firmware work. The software path
 already delivers the minimum outcome, and most of the user's goals
 (SpO₂, history, intervals) are more likely to be solved at the protocol layer.

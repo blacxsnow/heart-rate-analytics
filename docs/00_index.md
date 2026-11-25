@@ -17,6 +17,7 @@ Start here.
 | `11_deliverables.md` | Deliverables map and reproducibility commands |
 | `12_huawei_health_architecture.md` | Static architecture of Huawei Health 11.0.0.517 (BLE stack, HiChain, command builders, storage, native libs) |
 | `13_capture_results.md` | Runtime reference capture: HiChain3, AES-GCM, confirmed commands, interval result |
+| `14_firmware_feasibility.md` | Deep firmware/hardware inspection: Apollo3 secure boot, OTA path, SWD, recovery, staged plan |
 
 ## Current bottom line
 
