@@ -2,7 +2,9 @@
 Description=Huawei Band 9 heart-rate acquisition
 Documentation=file://@REPO@/docs/17_acquisition_system.md
 # The daemon retries if BlueZ is not ready, so no hard cross-manager dependency.
-After=default.target
+# Do not order this unit after default.target: both units are WantedBy it, and
+# the web unit is After=acquisition, which creates an ordering cycle at boot.
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple

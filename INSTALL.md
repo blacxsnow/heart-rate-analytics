@@ -208,6 +208,34 @@ The dashboard binds to `127.0.0.1:8787` only. To change it, edit the web unit
 and add `--port <port>`; exposing it beyond loopback requires a firewall and
 authentication in front, because the API has no authentication.
 
+### Web dashboard inactive after a reboot (older installs)
+
+Older unit templates contained `After=default.target` in the acquisition unit.
+Because both units are `WantedBy=default.target` and the web unit is
+`After=huawei-acquisition.service`, systemd saw an ordering cycle and deleted
+the **web** start job at boot. Acquisition still started; the dashboard did not.
+
+Reinstall the units from the current repository:
+
+```bash
+cd /path/to/heart-rate-analytics
+./install.sh
+# or, if Python dependencies are already installed:
+PYTHON=/path/to/python bash services/install-user-services.sh
+systemctl --user daemon-reload
+systemctl --user restart huawei-acquisition.service huawei-web.service
+```
+
+The current templates remove the cycle and set `StartLimitIntervalSec=0`, so a
+transient failure does not leave the unit rate-limited. Verify with:
+
+```bash
+systemctl --user is-active huawei-acquisition.service huawei-web.service
+systemd-analyze verify ~/.config/systemd/user/huawei-acquisition.service \
+  ~/.config/systemd/user/huawei-web.service
+journalctl --user -b | grep -i 'ordering cycle'
+```
+
 ### First run has no data
 
 The dashboard shows available data only. Start HR Data Broadcast, wait for a

@@ -258,6 +258,31 @@ while the HR endpoint is advertising.
 
 
 
+### Services do not start after a reboot
+
+If acquisition starts but the dashboard is inactive, check for an ordering
+cycle:
+
+```bash
+journalctl --user -b | grep -i 'ordering cycle'
+systemctl --user show -p After -p Before huawei-acquisition.service huawei-web.service
+```
+
+Older unit templates had `After=default.target` in the acquisition unit. Both
+units are `WantedBy=default.target` and the web unit is
+`After=huawei-acquisition.service`, so systemd detected a cycle and deleted the
+web start job. Reinstall the current units and restart both:
+
+```bash
+PYTHON=/path/to/python bash services/install-user-services.sh
+systemctl --user daemon-reload
+systemctl --user restart huawei-acquisition.service huawei-web.service
+```
+
+The current templates remove that ordering and set `StartLimitIntervalSec=0`.
+
+### Dashboard “Disconnect” versus “Stop acquisition”
+
 Both write `paused=true`; the daemon releases the BLE link and stops retrying.
 Use **Start acquisition** or **Connect** to resume. A normal BLE drop does not
 pause the daemon; it reconnects automatically.

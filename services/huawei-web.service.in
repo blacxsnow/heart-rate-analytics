@@ -2,6 +2,7 @@
 Description=Huawei Band 9 acquisition dashboard
 Documentation=file://@REPO@/docs/17_acquisition_system.md
 After=huawei-acquisition.service
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple
