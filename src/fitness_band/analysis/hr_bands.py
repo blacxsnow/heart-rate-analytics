@@ -113,7 +113,7 @@ def _sample_weights(timestamps: pd.Series) -> np.ndarray:
         return np.asarray([], dtype=float)
     if len(timestamps) == 1:
         return np.asarray([1.0], dtype=float)
-    seconds = timestamps.astype("int64").to_numpy(dtype=float) / 1e9
+    seconds = pd.DatetimeIndex(timestamps).as_unit("ns").asi8.astype(float) / 1e9
     gaps = np.diff(seconds)
     weights = np.clip(gaps, 0.0, MAX_GAP_SECONDS)
     weights = np.append(weights, float(np.median(weights)) if len(weights) else 1.0)

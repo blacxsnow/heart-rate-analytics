@@ -123,8 +123,9 @@ The restart button on the dashboard is disabled by default. Enable it with
   disconnection intervals.
 - Start/connect/disconnect/stop/reconnect controls, plus a confirmed
   **Reset Bluetooth adapter** action.
-- Manual **Band battery** log (the unauthenticated BLE interface exposes no
-  battery service) with latest reading and observed %/hour and %/day drain.
+- Manual **Band battery and charging** log (the unauthenticated BLE interface
+  exposes no battery service): battery readings, charge events with optional
+  start %/duration, charge-aware %/hour and %/day drain, and charge rate.
 - Sleep annotation form with retrospective editing/deletion; crossing midnight
   is supported (an end at/before the start is interpreted as the next day).
 - CSV export of all raw measurements.

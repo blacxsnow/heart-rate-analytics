@@ -138,15 +138,31 @@ DASHBOARD_HTML = r"""<!doctype html>
 
   <section class="panel">
     <div class="row between" style="margin-bottom:10px">
-      <strong>Band battery (manual)</strong>
-      <span class="muted">The HR endpoint exposes no Battery Service; read the band screen.</span>
+      <strong>Band battery and charging</strong>
+      <span class="muted">The HR endpoint exposes no Battery Service; log readings and charges from the band screen.</span>
     </div>
     <form id="battery-form">
-      <div><label for="battery-percent">Battery %</label><input id="battery-percent" type="number" min="0" max="100" step="1" required></div>
+      <div><label for="battery-percent">Current battery %</label><input id="battery-percent" type="number" min="0" max="100" step="1" required></div>
       <div><label for="battery-note">Note</label><input id="battery-note" type="text" placeholder="e.g. broadcast on, 2 h"></div>
       <div><button class="primary" type="submit">Log battery reading</button></div>
     </form>
     <div id="battery-latest" class="muted" style="margin-top:8px">No readings yet.</div>
+
+    <div style="border-top:1px solid #263241; margin:16px 0 12px"></div>
+    <div class="row between" style="margin-bottom:10px">
+      <strong>Charging</strong>
+      <span class="muted">Log after charging ends. A charge event resets the drain baseline; optional minutes enable charge-rate history.</span>
+    </div>
+    <form id="charge-form">
+      <div><label for="charge-to">Charged to %</label><input id="charge-to" type="number" min="0" max="100" step="1" required></div>
+      <div><label for="charge-from">From % (optional)</label><input id="charge-from" type="number" min="0" max="100" step="1" placeholder="auto: latest reading"></div>
+      <div><label for="charge-minutes">Charge time (min, optional)</label><input id="charge-minutes" type="number" min="0" step="1" placeholder="e.g. 45"></div>
+      <div><label for="charge-note">Note</label><input id="charge-note" type="text" placeholder="e.g. daily fixed charge"></div>
+      <div><button class="primary" type="submit">Log charge</button></div>
+    </form>
+    <div id="battery-charge-latest" class="muted" style="margin-top:8px">No charge events yet.</div>
+    <div id="battery-charge-history" class="muted" style="margin-top:6px"></div>
+    <div id="battery-warnings" class="muted" style="margin-top:6px"></div>
   </section>
 
   <section class="panel">
@@ -338,7 +354,7 @@ let points = [];
 let disconnects = [];
 let annotationCache = [];
 let editingId = null;
-let batteryReadings = [];
+let batterySummary = null;
 
 const TZ = 'Asia/Kolkata';
 const TZ_OFFSET_MS = 330 * 60 * 1000; // IST is UTC+05:30 with no DST.
@@ -567,34 +583,63 @@ function escapeHtml(s) {
 async function refreshAnnotations() {
   try { annotationCache = await getJSON('/api/annotations'); renderAnnotations(); } catch (e) {}
 }
+function drainBasisLabel(basis) {
+  if (basis === 'since_last_charge') return 'since last charge';
+  if (basis === 'last_24h') return 'over last 24 h';
+  return 'over all readings';
+}
 function renderBattery() {
-  if (!batteryReadings.length) {
+  const summary = batterySummary;
+  if (!summary || !summary.display) {
     $('battery-value').textContent = '—';
     $('battery-at').textContent = 'manual; no BLE service';
-    $('battery-latest').textContent = 'No readings yet.';
-    return;
+  } else {
+    const kind = summary.display.kind === 'charge' ? ' · after charge' : '';
+    $('battery-value').textContent = `${summary.display.percent}%`;
+    $('battery-at').textContent = `${fmtTime(summary.display.recorded_at)}${summary.display.note ? ' · ' + summary.display.note : ''}${kind}`;
   }
-  const newest = batteryReadings[0];
-  const recent = batteryReadings.filter(
-    r => Date.now() - new Date(r.recorded_at).getTime() <= 24 * 3600 * 1000
-  );
-  const oldest = recent.length ? recent[recent.length - 1] : newest;
-  $('battery-value').textContent = newest.percent == null ? '—' : `${newest.percent}%`;
-  $('battery-at').textContent = `${fmtTime(newest.recorded_at)}${newest.note ? ' · ' + newest.note : ''}`;
-  let text = `Last: ${newest.percent}% at ${fmtTime(newest.recorded_at)}`;
-  if (newest.percent != null && oldest.percent != null && newest !== oldest) {
-    const hours = (new Date(newest.recorded_at) - new Date(oldest.recorded_at)) / 3600000;
-    if (hours >= 1) {
-      const rate = (oldest.percent - newest.percent) / hours;
-      const perDay = rate * 24;
-      const sign = rate >= 0 ? '−' : '+';
-      text += ` · ${sign}${Math.abs(rate).toFixed(2)} %/h (${sign}${Math.abs(perDay).toFixed(1)} %/day) over ${hours.toFixed(1)} h`;
-    }
+
+  let text = 'No readings yet.';
+  if (summary && summary.latest_reading) {
+    const reading = summary.latest_reading;
+    text = `Last reading: ${reading.percent}% at ${fmtTime(reading.recorded_at)}`;
+  }
+  const drain = summary && summary.drain;
+  if (drain && drain.available) {
+    const rate = drain.drain_percent_per_hour;
+    const sign = rate >= 0 ? '−' : '+';
+    text += ` · ${sign}${Math.abs(rate).toFixed(2)} %/h (${sign}${Math.abs(drain.drain_percent_per_day).toFixed(1)} %/day) ${drainBasisLabel(drain.basis)}`;
+  } else if (drain && drain.reason) {
+    text += ` · drain unavailable: ${drain.reason}`;
   }
   $('battery-latest').textContent = text;
+
+  const charge = summary && summary.latest_charge;
+  if (!charge) {
+    $('battery-charge-latest').textContent = 'No charge events yet.';
+  } else {
+    let ctext = 'Last charge: ';
+    if (charge.from_percent != null) ctext += `${charge.from_percent}% → `;
+    ctext += `${charge.to_percent}% at ${fmtTime(charge.recorded_at)}`;
+    if (charge.duration_minutes != null) ctext += ` · ${charge.duration_minutes} min`;
+    if (charge.charge_rate_percent_per_hour != null) ctext += ` · +${charge.charge_rate_percent_per_hour.toFixed(1)} %/h`;
+    $('battery-charge-latest').textContent = ctext;
+  }
+
+  const charges = (summary && summary.charges) || [];
+  $('battery-charge-history').innerHTML = charges.slice(0, 5).map(item => {
+    const path = item.from_percent != null ? `${item.from_percent}% → ${item.to_percent}%` : `to ${item.to_percent}%`;
+    const duration = item.duration_minutes != null ? ` · ${item.duration_minutes} min` : '';
+    const rate = item.charge_rate_percent_per_hour != null ? ` · +${item.charge_rate_percent_per_hour.toFixed(1)} %/h` : '';
+    const note = item.note ? ` · ${escapeHtml(item.note)}` : '';
+    return `${escapeHtml(`· ${path}${duration}${rate} — ${fmtTime(item.recorded_at)}`)}${note}`;
+  }).join('<br>');
+
+  const warnings = (summary && summary.warnings) || [];
+  $('battery-warnings').textContent = warnings.length ? warnings.join(' · ') : '';
 }
 async function refreshBattery() {
-  try { batteryReadings = await getJSON('/api/battery'); renderBattery(); } catch (e) {}
+  try { batterySummary = await getJSON('/api/battery/summary'); renderBattery(); } catch (e) {}
 }
 async function control(action) {
   try {
@@ -613,6 +658,41 @@ $('battery-form').addEventListener('submit', async (ev) => {
   });
   if (!response.ok) { alert('Could not log battery reading'); return; }
   $('battery-note').value = '';
+  await refreshBattery();
+});
+$('charge-form').addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  const toPercent = parseInt($('charge-to').value, 10);
+  if (!(toPercent >= 0 && toPercent <= 100)) { alert('Charged-to % must be 0–100'); return; }
+  const fromRaw = $('charge-from').value.trim();
+  const fromPercent = fromRaw === '' ? null : parseInt(fromRaw, 10);
+  if (fromPercent != null && !(fromPercent >= 0 && fromPercent <= 100)) { alert('From % must be 0–100'); return; }
+  const minutesRaw = $('charge-minutes').value.trim();
+  const durationMinutes = minutesRaw === '' ? null : parseFloat(minutesRaw);
+  if (durationMinutes != null && !(durationMinutes >= 0)) { alert('Charge time must be zero or more minutes'); return; }
+  const response = await fetch('/api/battery/charge', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      to_percent: toPercent,
+      from_percent: fromPercent,
+      duration_minutes: durationMinutes,
+      note: $('charge-note').value || null,
+    }),
+  });
+  if (!response.ok) {
+    let detail = 'Could not log charge';
+    try {
+      const body = await response.json();
+      if (typeof body.detail === 'string') detail = body.detail;
+    } catch (e) {}
+    alert(detail);
+    return;
+  }
+  $('charge-to').value = '';
+  $('charge-from').value = '';
+  $('charge-minutes').value = '';
+  $('charge-note').value = '';
   await refreshBattery();
 });
 $('ann-form').addEventListener('submit', async (ev) => {

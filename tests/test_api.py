@@ -102,6 +102,71 @@ def test_manual_battery_readings(tmp_path) -> None:
         assert client.post("/api/battery", json={"percent": -1}).status_code == 422
 
 
+def test_battery_charge_events(tmp_path) -> None:
+    app = make_app(tmp_path)
+    with TestClient(app) as client:
+        summary = client.get("/api/battery/summary").json()
+        assert summary["display"] is None
+        assert summary["drain"]["available"] is False
+
+        assert client.post("/api/battery", json={"percent": 40}).status_code == 201
+        response = client.post(
+            "/api/battery/charge",
+            json={"to_percent": 100, "duration_minutes": 60, "note": "daily charge"},
+        )
+        assert response.status_code == 201
+        charge = response.json()
+        assert charge["from_percent"] == 40
+        assert charge["to_percent"] == 100
+        assert charge["duration_minutes"] == 60
+        assert charge["charge_rate_percent_per_hour"] == 60.0
+        assert charge["note"] == "daily charge"
+
+        charges = client.get("/api/battery/charges").json()
+        assert len(charges) == 1
+        assert charges[0]["to_percent"] == 100
+
+        app.state.db.add_event(
+            "battery_reading",
+            details={"percent": 95, "note": None, "source": "manual"},
+            ts=time.time() + 3600,
+        )
+        summary = client.get("/api/battery/summary").json()
+        assert summary["display"]["percent"] == 95
+        assert summary["latest_charge"]["to_percent"] == 100
+        assert summary["drain"]["basis"] == "since_last_charge"
+        assert summary["drain"]["start_percent"] == 100
+        assert summary["drain"]["end_percent"] == 95
+        assert summary["drain"]["drain_percent_per_hour"] == 5.0
+
+        below = client.post("/api/battery/charge", json={"to_percent": 30})
+        assert below.status_code == 400
+        assert "at least the start percentage" in below.json()["detail"]
+
+
+def test_battery_charge_validation(tmp_path) -> None:
+    app = make_app(tmp_path)
+    with TestClient(app) as client:
+        assert (
+            client.post("/api/battery/charge", json={"to_percent": 101}).status_code
+            == 422
+        )
+        assert (
+            client.post(
+                "/api/battery/charge",
+                json={"to_percent": 50, "duration_minutes": -1},
+            ).status_code
+            == 422
+        )
+        assert (
+            client.post(
+                "/api/battery/charge",
+                json={"to_percent": 50, "from_percent": 60},
+            ).status_code
+            == 400
+        )
+
+
 def test_analytics_endpoints(tmp_path) -> None:
     app = make_app(tmp_path)
     with TestClient(app) as client:

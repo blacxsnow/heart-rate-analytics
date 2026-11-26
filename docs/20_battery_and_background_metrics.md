@@ -57,25 +57,57 @@ Battery must currently be read from one of:
 2. Huawei Health on the phone,
 3. an authenticated proprietary session (not available independently yet).
 
-### 1.4 Manual battery logging (implemented)
+### 1.4 Manual battery and charging logging (implemented)
 
 Because the measurement that matters is **drain rate while broadcasting**, the
-dashboard now has a **Band battery (manual)** panel:
+dashboard now has a **Band battery and charging** panel with two forms.
+
+**Battery reading**
 
 - enter the percentage shown on the band,
 - optionally add a note (for example `broadcast on, 2 h`),
-- the reading is stored as a `battery_reading` event in `device_events`,
-- the panel shows the latest reading and, once two readings span at least one
-  hour, the observed **%/hour and %/day** rate.
+- the reading is stored as a `battery_reading` event in `device_events`.
+
+**Charge event** (log it after removing the band from the charger)
+
+- enter the **charged-to %** shown after charging,
+- optionally enter the **from %**; when left blank the server uses the latest
+  battery reading as the start percentage,
+- optionally enter **charge time in minutes**,
+- optionally add a note (for example `daily fixed charge`),
+- the event is stored as a `battery_charge` event with
+  `{from_percent, to_percent, duration_minutes, note, source}`.
 
 This uses the existing events table (no schema migration) and is available at
-<http://127.0.0.1:8787>. Example:
+<http://127.0.0.1:8787>.
+
+Drain calculation is charge-aware:
+
+1. If a charge event exists, drain is measured from the **last charge**
+   (`to_percent` and charge time) to the newest later reading. A charging jump
+   therefore never appears as negative drain.
+2. Without charge events, drain falls back to the newest and oldest readings in
+   the last 24 hours, or all readings if fewer than two are in that window.
+3. A rising battery without a charge event produces an explicit warning asking
+   for a charge event.
+
+Charge rate is shown **only** when both `from_percent` and `duration_minutes`
+are available:
 
 ```
-Last: 82% at 26 Nov 2026, 01:10:00 IST · −0.45 %/h (−10.8 %/day) over 5.2 h
+charge rate %/h = (to_percent − from_percent) / duration_minutes × 60
 ```
 
-A negative sign means drain; a positive sign means charging.
+Charge rate is kept separate from drain rate. Example display:
+
+```
+Last reading: 82% at 26 Nov 2026, 01:10:00 IST · −0.45 %/h (−10.8 %/day) since last charge
+Last charge: 20% → 100% at 25 Nov 2026, 22:00:00 IST · 90 min · +53.3 %/h
+```
+
+A negative sign means drain; a positive sign means charging. A regular daily
+charge time and duration make the charge rate and the post-charge drain rate
+directly comparable across days.
 
 ## 2. Sleep, SpO₂ and other routine metrics
 
@@ -166,4 +198,4 @@ connection” effects.
   remaining work is authentication and record decoding, not GATT discovery.
 
 Until then, the dashboard records HR continuously and accepts manual battery
-readings, and the analysis application remains read-only.
+readings and charge events, and the analysis application remains read-only.

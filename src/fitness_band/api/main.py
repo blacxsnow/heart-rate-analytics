@@ -26,6 +26,11 @@ from ..acquisition.control import apply_action
 from ..acquisition.spool import SpoolQueue
 from ..acquisition.state import read_state
 from ..analysis.baseline_rolling import baseline_report
+from ..analysis.battery import (
+    battery_summary,
+    parse_battery_charges,
+    parse_battery_readings,
+)
 from ..analysis.circadian_heatmap import heatmap_report
 from ..analysis.data_loader import load_annotations
 from ..analysis.descriptive import (
@@ -72,6 +77,13 @@ class ControlIn(BaseModel):
 
 class BatteryIn(BaseModel):
     percent: int = Field(ge=0, le=100)
+    note: str | None = None
+
+
+class BatteryChargeIn(BaseModel):
+    to_percent: int = Field(ge=0, le=100)
+    from_percent: int | None = Field(default=None, ge=0, le=100)
+    duration_minutes: float | None = Field(default=None, ge=0, le=1440)
     note: str | None = None
 
 
@@ -231,6 +243,67 @@ def create_app(
                 }
             )
         return readings
+
+    @app.post("/api/battery/charge", status_code=201)
+    def log_battery_charge(payload: BatteryChargeIn) -> dict[str, Any]:
+        """Log a charge event; optional start %/duration enable charge-rate stats."""
+        readings = parse_battery_readings(
+            db().events(limit=500, event_types=["battery_reading"])
+        )
+        from_percent = payload.from_percent
+        if from_percent is None and readings:
+            from_percent = round(readings[-1]["percent"])
+        if from_percent is not None and payload.to_percent < from_percent:
+            raise HTTPException(
+                status_code=400,
+                detail="charged-to % must be at least the start percentage",
+            )
+        details = {
+            "from_percent": from_percent,
+            "to_percent": payload.to_percent,
+            "duration_minutes": payload.duration_minutes,
+            "note": payload.note,
+            "source": "manual",
+        }
+        event_id = db().add_event("battery_charge", details=details)
+        recorded_at = iso_utc()
+        charge = parse_battery_charges(
+            [
+                {
+                    "event_id": event_id,
+                    "event_time_utc": recorded_at,
+                    "details": json.dumps(details),
+                }
+            ]
+        )[0]
+        return {key: value for key, value in charge.items() if key != "_at"}
+
+    @app.get("/api/battery/charges")
+    def battery_charges(
+        limit: int = Query(default=200, ge=1, le=2000),
+    ) -> list[dict[str, Any]]:
+        charges = parse_battery_charges(
+            db().events(limit=limit, event_types=["battery_charge"])
+        )
+        return [
+            {key: value for key, value in charge.items() if key != "_at"}
+            for charge in reversed(charges)
+        ]
+
+    @app.get("/api/battery/summary")
+    def battery_status() -> dict[str, Any]:
+        """Latest battery/charge state plus charge-aware drain and charge rate."""
+        events = db().events(
+            limit=2000,
+            event_types=["battery_reading", "battery_charge"],
+        )
+        readings = parse_battery_readings(
+            [event for event in events if event["event_type"] == "battery_reading"]
+        )
+        charges = parse_battery_charges(
+            [event for event in events if event["event_type"] == "battery_charge"]
+        )
+        return battery_summary(readings, charges)
 
     @app.get("/api/analytics")
     def analytics(

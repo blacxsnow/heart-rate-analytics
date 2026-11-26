@@ -24,7 +24,7 @@ def synthetic_frame() -> pd.DataFrame:
         {
             "timestamp_utc": index,
             "received_at_utc": index,
-            "epoch_utc": index.astype("int64") / 1e9,
+            "epoch_utc": index.as_unit("ns").astype("int64") / 1e9,
             "heart_rate_bpm": values,
             "session_id": 1,
             "quality": [{"sensor_contact": True} for _ in index],

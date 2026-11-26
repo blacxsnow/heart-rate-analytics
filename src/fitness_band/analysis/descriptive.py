@@ -331,7 +331,7 @@ def monitored_duration_seconds(timestamps: Iterable[Any]) -> float:
     if len(values) < 2:
         return 0.0
     index = pd.DatetimeIndex(values)
-    seconds = np.diff(index.asi8) / 1e9
+    seconds = np.diff(index.as_unit("ns").asi8) / 1e9
     seconds = np.clip(seconds, 0.0, MAX_GAP_SECONDS)
     return float(np.sum(seconds) + np.median(seconds))
 
@@ -347,7 +347,7 @@ def _time_weighted_mean(timestamps: pd.Series, values: pd.Series) -> float | Non
         return None
     if len(values) == 1:
         return round(float(values.iloc[0]), 3)
-    seconds = timestamps.astype("int64").to_numpy(dtype=float) / 1e9
+    seconds = pd.DatetimeIndex(timestamps).as_unit("ns").asi8.astype(float) / 1e9
     deltas = np.diff(seconds)
     weights = np.clip(deltas, 0.0, MAX_GAP_SECONDS)
     weights = np.append(weights, float(np.median(weights)) if len(weights) else 1.0)
