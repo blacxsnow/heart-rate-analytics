@@ -102,7 +102,7 @@ def load_measurement_frame(
         return frame
 
     frame["timestamp_utc"] = pd.to_datetime(
-        frame["timestamp_utc"], utc=True, errors="coerce"
+        frame["timestamp_utc"], utc=True, format="ISO8601", errors="coerce"
     )
     frame["heart_rate_bpm"] = pd.to_numeric(
         frame["heart_rate_bpm"], errors="coerce"
@@ -145,7 +145,7 @@ def load_events_frame(
     if frame.empty:
         return frame
     frame["event_time_utc"] = pd.to_datetime(
-        frame["event_time_utc"], utc=True, errors="coerce"
+        frame["event_time_utc"], utc=True, format="ISO8601", errors="coerce"
     )
     frame = frame.dropna(subset=["event_time_utc"]).copy()
     frame["event_time_local"] = frame["event_time_utc"].dt.tz_convert(tz)

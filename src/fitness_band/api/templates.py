@@ -752,6 +752,7 @@ const A = {
   bands: '',
   heatmapMetric: 'mean',
   loading: false,
+  refreshQueued: false,
 };
 const DEFAULT_BANDS_TEXT = '<50,50-59,60-69,70-79,80-89,90-99,100-109,110-119,120+';
 
@@ -1326,8 +1327,15 @@ function aRender(data) {
 }
 
 async function aRefresh() {
-  if (A.loading) return;
+  if (A.loading) {
+    // Keep the latest control value instead of dropping the change while a
+    // request is already in flight (for example a bin-width change during the
+    // 30-second refresh).
+    A.refreshQueued = true;
+    return;
+  }
   A.loading = true;
+  A.refreshQueued = false;
   $a('analytics-refresh').disabled = true;
   try {
     const params = new URLSearchParams({ range: A.range, bin_width: A.binWidth });
@@ -1348,6 +1356,10 @@ async function aRefresh() {
   } finally {
     A.loading = false;
     $a('analytics-refresh').disabled = false;
+    if (A.refreshQueued) {
+      A.refreshQueued = false;
+      aRefresh();
+    }
   }
 }
 

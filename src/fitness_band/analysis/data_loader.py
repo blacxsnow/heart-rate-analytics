@@ -52,8 +52,12 @@ def load_measurements(
     if df.empty:
         return df
 
-    df["timestamp_utc"] = pd.to_datetime(df["timestamp_utc"], utc=True, errors="coerce")
-    df["received_at_utc"] = pd.to_datetime(df["received_at_utc"], utc=True, errors="coerce")
+    df["timestamp_utc"] = pd.to_datetime(
+        df["timestamp_utc"], utc=True, format="ISO8601", errors="coerce"
+    )
+    df["received_at_utc"] = pd.to_datetime(
+        df["received_at_utc"], utc=True, format="ISO8601", errors="coerce"
+    )
     df = df.dropna(subset=["timestamp_utc", "heart_rate_bpm"]).copy()
     df["heart_rate_bpm"] = pd.to_numeric(df["heart_rate_bpm"], errors="coerce")
     df = df.dropna(subset=["heart_rate_bpm"])
@@ -86,8 +90,12 @@ def load_annotations(db_path: str | Path, *, local_tz: tzinfo | None = None) -> 
     )
     if df.empty:
         return df
-    df["start_time"] = pd.to_datetime(df["start_time"], utc=True, errors="coerce")
-    df["end_time"] = pd.to_datetime(df["end_time"], utc=True, errors="coerce")
+    df["start_time"] = pd.to_datetime(
+        df["start_time"], utc=True, format="ISO8601", errors="coerce"
+    )
+    df["end_time"] = pd.to_datetime(
+        df["end_time"], utc=True, format="ISO8601", errors="coerce"
+    )
     df = df.dropna(subset=["start_time", "end_time"]).copy()
     tz = local_tz or _local_tz()
     df["start_local"] = df["start_time"].dt.tz_convert(tz)
@@ -106,7 +114,9 @@ def load_sessions(db_path: str | Path) -> pd.DataFrame:
 def load_events(db_path: str | Path) -> pd.DataFrame:
     df = _read(db_path, "SELECT * FROM device_events ORDER BY event_id ASC")
     if not df.empty:
-        df["event_time_utc"] = pd.to_datetime(df["event_time_utc"], utc=True, errors="coerce")
+        df["event_time_utc"] = pd.to_datetime(
+            df["event_time_utc"], utc=True, format="ISO8601", errors="coerce"
+        )
     return df
 
 
